@@ -1,0 +1,15 @@
+{
+  "network": "tenderly",
+  "chainId": "6362",
+  "deployer": "0x4e656dA2f7e75d0d0d847b3aAbAD93364F8Eb652",
+  "contracts": {
+    "UserRegistry": "0x6b8c3975665899D931Ff51f2a29767Da787cBd3A",
+    "FreelancePlatform": "0xe8cA862527762063915308fDDBd1ebd5f93DF6b4"
+  },
+  "deploymentTime": "2025-08-15T19:43:02.846Z",
+  "transactionHashes": {
+    "UserRegistry": "0xbb1a9265498ef8f891c59a2e0958dc54e4c84d8a42d03f8377fa7caca7c43ba8",
+    "FreelancePlatform": "0xa8137a1252da8437639f02a6854c39dd1151f6a29775d200905e6e5ef969408a",
+    "Authorization": "0x62314fcb27404eaafc4815f232bc3cd39b3d3739cd34adda6fc340153c5f04de"
+  }
+}
