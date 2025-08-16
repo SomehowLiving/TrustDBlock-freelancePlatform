@@ -1,0 +1,156 @@
+{
+  "name": "freelance-platform-api",
+  "version": "1.1.0",
+  "description": "Hybrid on-chain/off-chain freelance platform backend with MongoDB and Ethereum integration",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "dev:watch": "nodemon --watch './**/*.js' --ignore './node_modules/**' app.js",
+    "test": "jest --detectOpenHandles",
+    "test:watch": "jest --watch --detectOpenHandles",
+    "test:coverage": "jest --coverage --detectOpenHandles",
+    "lint": "eslint . --ext .js",
+    "lint:fix": "eslint . --ext .js --fix",
+    "format": "prettier --write .",
+    "db:seed": "node scripts/seed-database.js",
+    "db:reset": "node scripts/reset-database.js",
+    "db:migrate": "node scripts/migrate-database.js",
+    "blockchain:sync": "node scripts/sync-blockchain.js",
+    "blockchain:verify": "node scripts/verify-contracts.js",
+    "setup": "npm run setup:env && npm run setup:db && npm run setup:contracts",
+    "setup:env": "node scripts/setup-environment.js",
+    "setup:db": "node scripts/setup-database.js",
+    "setup:contracts": "node scripts/setup-contracts.js",
+    "docs": "jsdoc -c jsdoc.conf.json",
+    "docker:build": "docker build -t freelance-platform-api .",
+    "docker:run": "docker run -p 3001:3001 --env-file .env freelance-platform-api",
+    "docker:dev": "docker-compose -f docker-compose.dev.yml up",
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
+    "build": "echo 'Build step - add your build process here'",
+    "deploy": "echo 'Deploy step - add your deployment process here'",
+    "health": "curl -f http://localhost:3001/health || exit 1",
+    "logs": "tail -f logs/app.log",
+    "monitor": "node scripts/monitor.js",
+    "backup": "node scripts/backup-database.js",
+    "restore": "node scripts/restore-database.js"
+  },
+  "keywords": [
+    "freelance",
+    "blockchain",
+    "ethereum",
+    "mongodb",
+    "smart-contracts",
+    "escrow",
+    "milestones",
+    "web3"
+  ],
+  "author": "Somehowliving",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SomehowLiving/TrustDBlock-freelancePlatform.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SomehowLiving/TrustDBlock-freelancePlatform/issues"
+  },
+  "homepage": "https://github.com/SomehowLiving/TrustDBlock-freelancePlatform#readme",
+  "dependencies": {
+    "express": "^4.18.2",
+    "mongoose": "^7.5.0",
+    "ethers": "^6.7.1",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^6.10.0",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1",
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "joi": "^17.9.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.4",
+    "redis": "^4.6.7",
+    "winston": "^3.10.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "axios": "^1.5.0",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4",
+    "uuid": "^9.0.0",
+    "cron": "^2.4.4",
+    "express-validator": "^7.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "jest": "^29.6.4",
+    "supertest": "^6.3.3",
+    "eslint": "^8.48.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.28.1",
+    "prettier": "^3.0.3",
+    "jsdoc": "^4.0.2",
+    "mongodb-memory-server": "^8.15.1",
+    "@types/node": "^20.5.7",
+    "husky": "^8.0.3",
+    "lint-staged": "^14.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
+    "testMatch": ["**/tests/**/*.test.js", "**/tests/**/*.spec.js"],
+    "collectCoverageFrom": [
+      "**/*.js",
+      "!**/node_modules/**",
+      "!**/tests/**",
+      "!**/coverage/**",
+      "!app.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 70,
+        "functions": 70,
+        "lines": 70,
+        "statements": 70
+      }
+    }
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "pre-push": "npm test"
+    }
+  },
+  "lint-staged": {
+    "*.js": ["eslint --fix", "prettier --write"]
+  },
+  "eslintConfig": {
+    "env": {
+      "node": true,
+      "es2021": true,
+      "jest": true
+    },
+    "extends": ["eslint:recommended", "airbnb-base"],
+    "parserOptions": {
+      "ecmaVersion": 12,
+      "sourceType": "module"
+    },
+    "rules": {
+      "no-console": "off",
+      "no-underscore-dangle": "off",
+      "consistent-return": "off",
+      "no-param-reassign": ["error", { "props": false }],
+      "max-len": ["error", { "code": 120 }]
+    }
+  },
+  "prettier": {
+    "singleQuote": true,
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": true,
+    "printWidth": 120
+  }
+}

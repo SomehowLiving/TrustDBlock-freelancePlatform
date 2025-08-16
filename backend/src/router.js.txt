@@ -1,0 +1,3245 @@
+// ---------------------just interacts with smart contracts-----------------------------------
+const express = require('express');
+const { ethers } = require('ethers');
+const router = express.Router();
+require('dotenv').config();
+const freelancePlatform = require('../abis/FreelancePlatform.json');
+const userRegistry = require('../abis/UserRegistry.json');
+
+// Contract configurations
+const CONTRACTS = {
+  freelancePlatform: {
+    address: process.env.FREELANCE_PLATFORM_ADDRESS || "0x1111111111111111111111111111111111111111",
+    abi: freelancePlatform || []
+  },
+  userRegistry: {
+    address: process.env.USER_REGISTRY_ADDRESS || "0x2222222222222222222222222222222222222222",
+    abi: userRegistry  || []
+  }
+};
+
+// Provider setup
+const provider = new ethers.JsonRpcProvider(process.env.RPC_URL || "http://localhost:8545");
+
+// Contract instances (read-only)
+const freelancePlatformContract = new ethers.Contract(
+  CONTRACTS.freelancePlatform.address,
+  CONTRACTS.freelancePlatform.abi,
+  provider
+);
+
+const userRegistryContract = new ethers.Contract(
+  CONTRACTS.userRegistry.address,
+  CONTRACTS.userRegistry.abi,
+  provider
+);
+
+// Utility functions
+const validateAddress = (address) => ethers.isAddress(address);
+const validateAmount = (amount) => !isNaN(amount) && parseFloat(amount) > 0;
+const parseEther = (amount) => ethers.parseEther(amount.toString());
+const formatEther = (amount) => ethers.formatEther(amount);
+
+// Enhanced error handling
+const handleContractError = (error, res) => {
+  console.error('Contract error:', error);
+  
+  let errorMessage = 'Contract interaction failed';
+  if (error.reason) {
+    errorMessage = error.reason;
+  } else if (error.message) {
+    errorMessage = error.message;
+  }
+  
+  res.status(400).json({
+    success: false,
+    error: errorMessage,
+    details: error.message
+  });
+};
+
+// Middleware for validating wallet addresses
+const validateWallet = (req, res, next) => {
+  const walletAddress = req.headers['x-wallet-address'] || req.body.walletAddress;
+  if (!walletAddress || !validateAddress(walletAddress)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Valid wallet address required in x-wallet-address header or body'
+    });
+  }
+  req.userAddress = walletAddress;
+  next();
+};
+
+// Middleware to check user registration
+const checkUserRegistration = async (req, res, next) => {
+  try {
+    const isRegistered = await userRegistryContract.isUserRegistered(req.userAddress);
+    if (!isRegistered) {
+      return res.status(400).json({
+        success: false,
+        error: 'User must be registered first. Please register through /users/register'
+      });
+    }
+    next();
+  } catch (error) {
+    handleContractError(error, res);
+  }
+};
+
+// ==================== USER REGISTRY ROUTES ====================
+
+// Register user
+router.post('/users/register', validateWallet, async (req, res) => {
+  try {
+    const { role, metadataHash = '' } = req.body;
+
+    if (!role || !['Client', 'Freelancer', 'Admin'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Role must be Client, Freelancer, or Admin'
+      });
+    }
+
+    // Check if already registered
+    const isRegistered = await userRegistryContract.isUserRegistered(req.userAddress);
+    if (isRegistered) {
+      return res.status(400).json({
+        success: false,
+        error: 'User already registered'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call registerUser or selfRegister on UserRegistry contract',
+      contractCall: {
+        contract: 'UserRegistry',
+        method: 'selfRegister',
+        params: [role, metadataHash],
+        address: CONTRACTS.userRegistry.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get user profile
+router.get('/users/:address', async (req, res) => {
+  try {
+    const userAddress = req.params.address;
+    
+    if (!validateAddress(userAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid wallet address'
+      });
+    }
+
+    const isRegistered = await userRegistryContract.isUserRegistered(userAddress);
+    if (!isRegistered) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not registered'
+      });
+    }
+
+    const profile = await userRegistryContract.getUserProfile(userAddress);
+    const reputation = await freelancePlatformContract.getFreelancerReputation(userAddress);
+
+    res.json({
+      success: true,
+      data: {
+        address: userAddress,
+        role: profile.role,
+        registrationTime: profile.registrationTime.toString(),
+        isActive: profile.isActive,
+        metadataHash: profile.metadataHash,
+        reputation: {
+          totalEarned: formatEther(reputation.totalEarned),
+          projectsCompleted: reputation.projectsCompleted.toString(),
+          averageRating: reputation.averageRating.toString(),
+          totalRatings: reputation.totalRatings.toString(),
+          hasNFT: reputation.hasNFT
+        }
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get users by role
+router.get('/users/role/:role', async (req, res) => {
+  try {
+    const { role } = req.params;
+    
+    if (!['Client', 'Freelancer', 'Admin'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Role must be Client, Freelancer, or Admin'
+      });
+    }
+
+    const users = await userRegistryContract.getUsersByRole(role);
+    const activeUsers = await userRegistryContract.getActiveUsersByRole(role);
+
+    res.json({
+      success: true,
+      data: {
+        role,
+        allUsers: users,
+        activeUsers,
+        totalCount: users.length,
+        activeCount: activeUsers.length
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// ==================== PROJECT ROUTES ====================
+
+// Create project
+router.post('/projects', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      requirements = [],
+      skills = [],
+      category = 'General',
+      budget,
+      applicationPeriodDays = 7,
+      expectedMilestones = 1
+    } = req.body;
+
+    if (!title || !description || !budget) {
+      return res.status(400).json({
+        success: false,
+        error: 'Title, description, and budget are required'
+      });
+    }
+
+    if (!validateAmount(budget)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Budget must be a valid positive number'
+      });
+    }
+
+    // Create metadata object for IPFS
+    const metadata = {
+      title,
+      description,
+      requirements,
+      skills,
+      category
+    };
+    
+    // In production, upload to IPFS and get hash
+    const metadataHash = "QmMetadataHash123"; // Mock hash
+
+    res.json({
+      success: true,
+      message: 'Call createProject on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'createProject',
+        params: [
+          parseEther(budget).toString(),
+          expectedMilestones,
+          metadataHash,
+          applicationPeriodDays
+        ],
+        address: CONTRACTS.freelancePlatform.address
+      },
+      metadata
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get project by ID
+router.get('/projects/:id', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id).toString();
+    
+    if (isNaN(projectId) || projectId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid project ID'
+      });
+    }
+
+    try {
+      const project = await freelancePlatformContract.getProject(projectId);
+      const milestoneIds = await freelancePlatformContract.getProjectMilestones(projectId);
+      const shortlistedFreelancers = await freelancePlatformContract.getShortlistedFreelancers(projectId);
+      const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+      const pendingAmount = await freelancePlatformContract.getPendingAmount(projectId);
+
+      // Get milestones details
+      const milestones = [];
+      for (const milestoneId of milestoneIds) {
+        try {
+          const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+          milestones.push({
+            id: milestone.id.toString(),
+            projectId: milestone.projectId.toString(),
+            amount: formatEther(milestone.amount),
+            deadline: milestone.deadline.toString(),
+            finalSubmitTime: milestone.finalSubmitTime.toString(),
+            status: milestone.status,
+            extensionRequested: milestone.extensionRequested,
+            metadataHash: milestone.metadataHash,
+            submissionTime: milestone.submissionTime.toString(),
+            disputeRaised: milestone.disputeRaised
+          });
+        } catch (err) {
+          // Milestone might not exist
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          id: project.id.toString(),
+          client: project.client,
+          freelancer: project.freelancer,
+          totalBudget: formatEther(project.totalBudget),
+          escrowBalance: formatEther(project.escrowBalance),
+          status: projectStatus,
+          isDisputed: project.isDisputed,
+          totalMilestones: project.totalMilestones.toString(),
+          completedMilestones: project.completedMilestones.toString(),
+          metadataHash: project.metadataHash,
+          createdAt: project.createdAt.toString(),
+          applicationDeadline: project.applicationDeadline.toString(),
+          shortlistedFreelancers,
+          pendingAmount: formatEther(pendingAmount),
+          milestones
+        }
+      });
+    } catch (contractError) {
+      if (contractError.reason === 'InvalidProject') {
+        return res.status(404).json({
+          success: false,
+          error: 'Project not found'
+        });
+      }
+      throw contractError;
+    }
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get all projects with filtering
+router.get('/projects', async (req, res) => {
+  try {
+    const {
+      status,
+      clientAddress,
+      freelancerAddress,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    // Get total project count
+    const projectCounter = await freelancePlatformContract.projectCounter();
+    const totalProjects = parseInt(projectCounter.toString());
+
+    if (totalProjects === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: 0,
+          totalItems: 0,
+          itemsPerPage: parseInt(limit)
+        }
+      });
+    }
+
+    const projects = [];
+    
+    // Fetch projects (in production, implement better pagination)
+    const startIndex = Math.max(1, totalProjects - (page * limit) + 1);
+    const endIndex = Math.min(totalProjects, startIndex + parseInt(limit) - 1);
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      try {
+        const project = await freelancePlatformContract.getProject(i);
+        const projectStatus = await freelancePlatformContract.getProjectStatus(i);
+        
+        // Apply filters
+        if (status && projectStatus !== status) continue;
+        if (clientAddress && project.client.toLowerCase() !== clientAddress.toLowerCase()) continue;
+        if (freelancerAddress && project.freelancer.toLowerCase() !== freelancerAddress.toLowerCase()) continue;
+
+        projects.push({
+          id: project.id.toString(),
+          client: project.client,
+          freelancer: project.freelancer,
+          totalBudget: formatEther(project.totalBudget),
+          escrowBalance: formatEther(project.escrowBalance),
+          status: projectStatus,
+          isDisputed: project.isDisputed,
+          totalMilestones: project.totalMilestones.toString(),
+          completedMilestones: project.completedMilestones.toString(),
+          metadataHash: project.metadataHash,
+          createdAt: project.createdAt.toString(),
+          applicationDeadline: project.applicationDeadline.toString()
+        });
+      } catch (err) {
+        // Project might not exist or be accessible
+        continue;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: projects,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalProjects / limit),
+        totalItems: totalProjects,
+        itemsPerPage: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Deposit funds to project
+router.post('/projects/:id/deposit', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { amount } = req.body;
+
+    if (!validateAmount(amount)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid amount required'
+      });
+    }
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can deposit funds'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call depositFunds on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'depositFunds',
+        params: [projectId],
+        value: parseEther(amount),
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Apply for project
+router.post('/projects/:id/apply', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { proposalHash = 'QmProposalHash123' } = req.body;
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() === req.userAddress.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Client cannot apply to their own project'
+      });
+    }
+
+    const hasApplied = await freelancePlatformContract.hasFreelancerApplied(projectId, req.userAddress);
+    if (hasApplied) {
+      return res.status(400).json({
+        success: false,
+        error: 'Already applied to this project'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call applyForProject on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'applyForProject',
+        params: [projectId, proposalHash],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Shortlist freelancers
+router.post('/projects/:id/shortlist', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { freelancerAddresses } = req.body;
+
+    if (!Array.isArray(freelancerAddresses) || freelancerAddresses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Must provide array of freelancer addresses'
+      });
+    }
+
+    if (freelancerAddresses.length > 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot shortlist more than 10 freelancers'
+      });
+    }
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can shortlist freelancers'
+      });
+    }
+
+    // Validate all addresses have applied
+    for (const address of freelancerAddresses) {
+      if (!validateAddress(address)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid address: ${address}`
+        });
+      }
+
+      const hasApplied = await freelancePlatformContract.hasFreelancerApplied(projectId, address);
+      if (!hasApplied) {
+        return res.status(400).json({
+          success: false,
+          error: `Freelancer ${address} has not applied to this project`
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Call shortlistFreelancers on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'shortlistFreelancers',
+        params: [projectId, freelancerAddresses],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Select freelancer
+router.post('/projects/:id/select', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { freelancerAddress } = req.body;
+
+    if (!validateAddress(freelancerAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid freelancer address required'
+      });
+    }
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can select freelancer'
+      });
+    }
+
+    if (project.freelancer !== ethers.ZeroAddress) {
+      return res.status(400).json({
+        success: false,
+        error: 'Freelancer already selected for this project'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call selectFreelancer on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'selectFreelancer',
+        params: [projectId, freelancerAddress],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Accept project (by freelancer)
+router.post('/projects/:id/accept', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.freelancer.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only selected freelancer can accept project'
+      });
+    }
+
+    const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+    if (projectStatus !== 'Negotiating') {
+      return res.status(400).json({
+        success: false,
+        error: 'Project is not in negotiating status'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call acceptProject on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'acceptProject',
+        params: [projectId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// ==================== MILESTONE ROUTES ====================
+
+// Create milestones (agree on milestones)
+router.post('/projects/:id/milestones', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { milestones } = req.body;
+
+    if (!Array.isArray(milestones) || milestones.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Must provide array of milestones'
+      });
+    }
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can create milestones'
+      });
+    }
+
+    const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+    if (projectStatus !== 'Negotiating') {
+      return res.status(400).json({
+        success: false,
+        error: 'Project must be in negotiating status'
+      });
+    }
+
+    const freelancerAccepted = await freelancePlatformContract.freelancerAccepted(projectId);
+    if (!freelancerAccepted) {
+      return res.status(400).json({
+        success: false,
+        error: 'Freelancer must accept project first'
+      });
+    }
+
+    // Validate and prepare milestone data
+    let totalAmount = 0;
+    const amounts = [];
+    const deadlines = [];
+    const metadataHashes = [];
+
+    for (const milestone of milestones) {
+      if (!milestone.title || !milestone.amount || !milestone.deadline) {
+        return res.status(400).json({
+          success: false,
+          error: 'Each milestone must have title, amount, and deadline'
+        });
+      }
+
+      if (!validateAmount(milestone.amount)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid amount for milestone: ${milestone.title}`
+        });
+      }
+
+      const amount = parseFloat(milestone.amount);
+      totalAmount += amount;
+      amounts.push(parseEther(amount));
+      
+      // Convert deadline to timestamp
+      const deadlineDate = new Date(milestone.deadline);
+      if (deadlineDate <= new Date()) {
+        return res.status(400).json({
+          success: false,
+          error: `Deadline must be in the future for milestone: ${milestone.title}`
+        });
+      }
+      deadlines.push(Math.floor(deadlineDate.getTime() / 1000));
+      
+      // Create metadata hash (in production, upload to IPFS)
+      metadataHashes.push(milestone.metadataHash || `QmMilestone${milestone.title}`);
+    }
+
+    // Check total amount doesn't exceed escrow
+    const escrowBalance = parseFloat(formatEther(project.escrowBalance));
+    if (totalAmount > escrowBalance) {
+      return res.status(400).json({
+        success: false,
+        error: `Total milestone amount (${totalAmount}) exceeds escrow balance (${escrowBalance})`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call agreeMilestones on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'agreeMilestones',
+        params: [projectId, amounts, deadlines, metadataHashes],
+        address: CONTRACTS.freelancePlatform.address
+      },
+      milestoneData: {
+        projectId,
+        totalAmount,
+        milestoneCount: milestones.length,
+        milestones: milestones.map((m, i) => ({
+          title: m.title,
+          amount: m.amount,
+          deadline: new Date(deadlines[i] * 1000).toISOString(),
+          metadataHash: metadataHashes[i]
+        }))
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Submit milestone work
+router.post('/milestones/:id/submit', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+    const { deliveryHash = 'QmDeliveryHash123', notes = '', files = [] } = req.body;
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    if (project.freelancer.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only assigned freelancer can submit milestone work'
+      });
+    }
+
+    if (milestone.status !== 0) { // 0 = Pending
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone is not in pending status'
+      });
+    }
+
+    // Check deadline
+    const currentTime = Math.floor(Date.now() / 1000);
+    const deadline = parseInt(milestone.deadline.toString());
+    if (currentTime > deadline + (3 * 24 * 60 * 60)) { // 3 days grace period
+      return res.status(400).json({
+        success: false,
+        error: 'Submission period has expired'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call submitMilestoneWork on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'submitMilestoneWork',
+        params: [milestoneId, deliveryHash, notes],
+        address: CONTRACTS.freelancePlatform.address
+      },
+      submissionData: {
+        milestoneId,
+        deliveryHash,
+        notes,
+        files
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Final submit milestone
+router.post('/milestones/:id/final-submit', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    if (project.freelancer.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only assigned freelancer can final submit milestone'
+      });
+    }
+
+    if (milestone.status !== 0) { // 0 = Pending
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone already submitted'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call finalSubmitMilestone on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'finalSubmitMilestone',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Approve milestone
+router.post('/milestones/:id/approve', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can approve milestones'
+      });
+    }
+
+    if (milestone.status !== 1) { // 1 = Submitted
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone is not in submitted status'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call approveMilestone on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'approveMilestone',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Release payment
+router.post('/milestones/:id/release', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can release payments'
+      });
+    }
+
+    if (milestone.status !== 2) { // 2 = Approved
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone must be approved before payment release'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call releaseMilestonePayment on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'releaseMilestonePayment',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Auto approve milestone (anyone can call after timeout)
+router.post('/milestones/:id/auto-approve', async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    
+    if (milestone.status !== 1) { // 1 = Submitted
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone is not in submitted status'
+      });
+    }
+
+    // Check if auto-approve period has passed
+    const currentTime = Math.floor(Date.now() / 1000);
+    const submitTime = milestone.submissionTime.toString() !== '0' 
+      ? parseInt(milestone.submissionTime.toString()) 
+      : parseInt(milestone.finalSubmitTime.toString());
+    
+    const autoApproveDeadline = submitTime + (10 * 24 * 60 * 60); // 10 days
+    
+    if (currentTime <= autoApproveDeadline) {
+      return res.status(400).json({
+        success: false,
+        error: 'Auto-approve period not reached yet'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call autoApproveMilestone on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'autoApproveMilestone',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Request milestone extension
+router.post('/milestones/:id/request-extension', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+    const { newDeadline } = req.body;
+
+    if (!newDeadline) {
+      return res.status(400).json({
+        success: false,
+        error: 'New deadline is required'
+      });
+    }
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    if (project.freelancer.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only assigned freelancer can request extension'
+      });
+    }
+
+    const newDeadlineTimestamp = Math.floor(new Date(newDeadline).getTime() / 1000);
+    const currentDeadline = parseInt(milestone.deadline.toString());
+    
+    if (newDeadlineTimestamp <= currentDeadline) {
+      return res.status(400).json({
+        success: false,
+        error: 'New deadline must be later than current deadline'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call requestExtension on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'requestExtension',
+        params: [milestoneId, newDeadlineTimestamp],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Approve milestone extension
+router.post('/milestones/:id/approve-extension', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+    const { newDeadline } = req.body;
+
+    if (!newDeadline) {
+      return res.status(400).json({
+        success: false,
+        error: 'New deadline is required'
+      });
+    }
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can approve extension'
+      });
+    }
+
+    const newDeadlineTimestamp = Math.floor(new Date(newDeadline).getTime() / 1000);
+
+    res.json({
+      success: true,
+      message: 'Call approveExtension on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'approveExtension',
+        params: [milestoneId, newDeadlineTimestamp],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Dispute milestone
+router.post('/milestones/:id/dispute', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Dispute reason is required'
+      });
+    }
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    const isClient = project.client.toLowerCase() === req.userAddress.toLowerCase();
+    const isFreelancer = project.freelancer.toLowerCase() === req.userAddress.toLowerCase();
+
+    if (!isClient && !isFreelancer) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project participants can raise disputes'
+      });
+    }
+
+    if (milestone.status !== 1) { // 1 = Submitted
+      return res.status(400).json({
+        success: false,
+        error: 'Can only dispute submitted milestones'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call disputeMilestone on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'disputeMilestone',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      },
+      disputeData: {
+        milestoneId,
+        reason: reason.trim(),
+        disputedBy: req.userAddress
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Cancel milestone (mutual agreement)
+router.post('/milestones/:id/request-cancellation', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+    
+    const isClient = project.client.toLowerCase() === req.userAddress.toLowerCase();
+    const isFreelancer = project.freelancer.toLowerCase() === req.userAddress.toLowerCase();
+
+    if (!isClient && !isFreelancer) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project participants can request milestone cancellation'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call requestMilestoneCancellation on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'requestMilestoneCancellation',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Auto-cancel milestone (after deadline + grace period)
+router.post('/milestones/:id/auto-cancel', async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    
+    if (milestone.status !== 0) { // 0 = Pending
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone is not in pending status'
+      });
+    }
+
+    // Check if auto-cancel period has passed
+    const currentTime = Math.floor(Date.now() / 1000);
+    const deadline = parseInt(milestone.deadline.toString());
+    const autoCancelDeadline = deadline + (10 * 24 * 60 * 60); // 10 days after deadline
+    
+    if (currentTime < autoCancelDeadline) {
+      return res.status(400).json({
+        success: false,
+        error: 'Auto-cancel period not reached yet'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call autoCancelMilestone on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'autoCancelMilestone',
+        params: [milestoneId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get milestone details
+router.get('/milestones/:id', async (req, res) => {
+  try {
+    const milestoneId = parseInt(req.params.id);
+
+    const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+    const delivery = await freelancePlatformContract.getDelivery(milestoneId);
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+
+    // Map milestone status enum to string
+    const statusMap = {
+      0: 'Pending',
+      1: 'Submitted', 
+      2: 'Approved',
+      3: 'Paid',
+      4: 'Disputed',
+      5: 'Cancelled',
+      6: 'Refunded'
+    };
+
+    res.json({
+      success: true,
+      data: {
+        milestone: {
+          id: milestone.id.toString(),
+          projectId: milestone.projectId.toString(),
+          amount: formatEther(milestone.amount),
+          deadline: milestone.deadline.toString(),
+          finalSubmitTime: milestone.finalSubmitTime.toString(),
+          status: statusMap[milestone.status] || 'Unknown',
+          statusCode: milestone.status,
+          extensionRequested: milestone.extensionRequested,
+          metadataHash: milestone.metadataHash,
+          submissionTime: milestone.submissionTime.toString(),
+          disputeRaised: milestone.disputeRaised
+        },
+        delivery: delivery.milestoneId.toString() !== '0' ? {
+          milestoneId: delivery.milestoneId.toString(),
+          deliveryHash: delivery.deliveryHash,
+          submissionTime: delivery.submissionTime.toString(),
+          notes: delivery.notes
+        } : null,
+        project: {
+          id: project.id.toString(),
+          title: 'Project #' + project.id.toString(), // In production, get from metadata
+          client: project.client,
+          freelancer: project.freelancer
+        }
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// ==================== REPUTATION & RATING ROUTES ====================
+
+// Rate project
+router.post('/projects/:id/rate', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { rating } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        error: 'Rating must be between 1 and 5'
+      });
+    }
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+    
+    if (projectStatus !== 'Completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Project must be completed to rate'
+      });
+    }
+
+    const isClient = project.client.toLowerCase() === req.userAddress.toLowerCase();
+    const isFreelancer = project.freelancer.toLowerCase() === req.userAddress.toLowerCase();
+
+    if (!isClient && !isFreelancer) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project participants can rate'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call rateProject on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'rateProject',
+        params: [projectId, rating],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get user reputation
+router.get('/users/:address/reputation', async (req, res) => {
+  try {
+    const userAddress = req.params.address;
+    
+    if (!validateAddress(userAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid wallet address'
+      });
+    }
+
+    const reputation = await freelancePlatformContract.getFreelancerReputation(userAddress);
+
+    res.json({
+      success: true,
+      data: {
+        address: userAddress,
+        totalEarned: formatEther(reputation.totalEarned),
+        projectsCompleted: reputation.projectsCompleted.toString(),
+        averageRating: reputation.averageRating.toString(),
+        totalRatings: reputation.totalRatings.toString(),
+        hasNFT: reputation.hasNFT
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// ==================== ADMIN ROUTES ====================
+
+// Resolve dispute (admin only)
+router.post('/admin/resolve-dispute', async (req, res) => {
+  try {
+    const { milestoneId, winner, disputedAmount, adminKey } = req.body;
+
+    // Simple admin authentication
+    if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid admin credentials'
+      });
+    }
+
+    const milestone = await freelancePlatformContract.getMilestone(parseInt(milestoneId));
+    const project = await freelancePlatformContract.getProject(milestone.projectId);
+
+    if (milestone.status !== 4) { // 4 = Disputed
+      return res.status(400).json({
+        success: false,
+        error: 'Milestone is not in disputed status'
+      });
+    }
+
+    if (!validateAddress(winner)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid winner address'
+      });
+    }
+
+    const amount = disputedAmount ? parseEther(disputedAmount) : milestone.amount;
+
+    res.json({
+      success: true,
+      message: 'Call resolveDispute on FreelancePlatform contract (admin only)',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'resolveDispute',
+        params: [parseInt(milestoneId), winner, amount],
+        address: CONTRACTS.freelancePlatform.address
+      },
+      disputeData: {
+        milestoneId,
+        winner,
+        amount: formatEther(amount),
+        isFreelancerWinner: winner.toLowerCase() === project.freelancer.toLowerCase()
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Update platform fee (owner only)
+router.post('/admin/update-platform-fee', async (req, res) => {
+  try {
+    const { feePercent, adminKey } = req.body;
+
+    if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid admin credentials'
+      });
+    }
+
+    if (!feePercent || feePercent < 0 || feePercent > 1000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Fee percent must be between 0 and 1000 (10%)'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call updatePlatformFee on FreelancePlatform contract (owner only)',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'updatePlatformFee',
+        params: [feePercent],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Update freelancer fee (owner only)
+router.post('/admin/update-freelancer-fee', async (req, res) => {
+  try {
+    const { feePercent, adminKey } = req.body;
+
+    if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid admin credentials'
+      });
+    }
+
+    if (!feePercent || feePercent < 0 || feePercent > 1000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Fee percent must be between 0 and 1000 (10%)'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call updateFreelancerFee on FreelancePlatform contract (owner only)',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'updateFreelancerFee',
+        params: [feePercent],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Emergency withdraw (client only for specific cases)
+router.post('/projects/:id/emergency-withdraw', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can emergency withdraw'
+      });
+    }
+
+    const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+    const allowedStatuses = ['Draft', 'Open', 'Selecting'];
+    
+    if (!allowedStatuses.includes(projectStatus)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Emergency withdraw only available for Draft, Open, or Selecting status'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call emergencyWithdraw on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'emergencyWithdraw',
+        params: [projectId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Withdraw excess funds (after project completion)
+router.post('/projects/:id/withdraw-excess', validateWallet, checkUserRegistration, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    const project = await freelancePlatformContract.getProject(projectId);
+    
+    if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can withdraw excess funds'
+      });
+    }
+
+    const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+    
+    if (projectStatus !== 'Completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Can only withdraw excess funds from completed projects'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Call withdrawExcessFunds on FreelancePlatform contract',
+      contractCall: {
+        contract: 'FreelancePlatform',
+        method: 'withdrawExcessFunds',
+        params: [projectId],
+        address: CONTRACTS.freelancePlatform.address
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// ==================== PLATFORM STATISTICS ====================
+
+// Get platform statistics
+router.get('/platform/stats', async (req, res) => {
+  try {
+    const stats = await freelancePlatformContract.getPlatformStats();
+    const userStats = await userRegistryContract.getUserStats();
+
+    res.json({
+      success: true,
+      data: {
+        totalVolumeProcessed: formatEther(stats.totalVolume),
+        totalFeesCollected: formatEther(stats.totalFees),
+        totalProjectsCompleted: stats.totalProjects.toString(),
+        activeProjects: stats.activeProjects.toString(),
+        totalUsers: userStats.totalUsers.toString(),
+        totalClients: userStats.totalClients.toString(),
+        totalFreelancers: userStats.totalFreelancers.toString(),
+        totalAdmins: userStats.totalAdmins.toString()
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get user's projects
+router.get('/users/:address/projects', async (req, res) => {
+  try {
+    const userAddress = req.params.address;
+    const { role = 'all', page = 1, limit = 20 } = req.query;
+    
+    if (!validateAddress(userAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid wallet address'
+      });
+    }
+
+    let projects = [];
+
+    try {
+      if (role === 'client' || role === 'all') {
+        const clientProjects = await freelancePlatformContract.getClientProjects(userAddress);
+        for (const projectId of clientProjects) {
+          try {
+            const project = await freelancePlatformContract.getProject(projectId);
+            const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+            projects.push({
+              ...formatProjectData(project, projectStatus),
+              userRole: 'client'
+            });
+          } catch (err) {
+            // Skip inaccessible projects
+          }
+        }
+      }
+
+      if (role === 'freelancer' || role === 'all') {
+        const freelancerProjects = await freelancePlatformContract.getFreelancerProjects(userAddress);
+        for (const projectId of freelancerProjects) {
+          try {
+            const project = await freelancePlatformContract.getProject(projectId);
+            const projectStatus = await freelancePlatformContract.getProjectStatus(projectId);
+            projects.push({
+              ...formatProjectData(project, projectStatus),
+              userRole: 'freelancer'
+            });
+          } catch (err) {
+            // Skip inaccessible projects
+          }
+        }
+      }
+    } catch (error) {
+      // Handle case where user has no projects
+      projects = [];
+    }
+
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedProjects = projects.slice(startIndex, endIndex);
+
+    res.json({
+      success: true,
+      data: paginatedProjects,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(projects.length / limit),
+        totalItems: projects.length,
+        itemsPerPage: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Helper function to format project data
+function formatProjectData(project, status) {
+  return {
+    id: project.id.toString(),
+    client: project.client,
+    freelancer: project.freelancer,
+    totalBudget: formatEther(project.totalBudget),
+    escrowBalance: formatEther(project.escrowBalance),
+    status: status,
+    isDisputed: project.isDisputed,
+    totalMilestones: project.totalMilestones.toString(),
+    completedMilestones: project.completedMilestones.toString(),
+    metadataHash: project.metadataHash,
+    createdAt: project.createdAt.toString(),
+    applicationDeadline: project.applicationDeadline.toString()
+  };
+}
+
+// Get project milestones
+router.get('/projects/:id/milestones', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    const milestoneIds = await freelancePlatformContract.getProjectMilestones(projectId);
+    const milestones = [];
+
+    for (const milestoneId of milestoneIds) {
+      try {
+        const milestone = await freelancePlatformContract.getMilestone(milestoneId);
+        const statusMap = {
+          0: 'Pending',
+          1: 'Submitted', 
+          2: 'Approved',
+          3: 'Paid',
+          4: 'Disputed',
+          5: 'Cancelled',
+          6: 'Refunded'
+        };
+
+        milestones.push({
+          id: milestone.id.toString(),
+          projectId: milestone.projectId.toString(),
+          amount: formatEther(milestone.amount),
+          deadline: milestone.deadline.toString(),
+          finalSubmitTime: milestone.finalSubmitTime.toString(),
+          status: statusMap[milestone.status] || 'Unknown',
+          statusCode: milestone.status,
+          extensionRequested: milestone.extensionRequested,
+          metadataHash: milestone.metadataHash,
+          submissionTime: milestone.submissionTime.toString(),
+          disputeRaised: milestone.disputeRaised
+        });
+      } catch (err) {
+        // Skip inaccessible milestones
+      }
+    }
+
+    res.json({
+      success: true,
+      data: milestones
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// ==================== UTILITY ROUTES ====================
+
+// Check if user has applied to project
+router.get('/projects/:id/applications/:address', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const freelancerAddress = req.params.address;
+
+    if (!validateAddress(freelancerAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid freelancer address'
+      });
+    }
+
+    const hasApplied = await freelancePlatformContract.hasFreelancerApplied(projectId, freelancerAddress);
+    const isShortlisted = await freelancePlatformContract.isFreelancerShortlisted(projectId, freelancerAddress);
+
+    res.json({
+      success: true,
+      data: {
+        projectId,
+        freelancerAddress,
+        hasApplied,
+        isShortlisted
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Get shortlisted freelancers for project
+router.get('/projects/:id/shortlisted', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    const shortlistedFreelancers = await freelancePlatformContract.getShortlistedFreelancers(projectId);
+
+    res.json({
+      success: true,
+      data: {
+        projectId,
+        shortlistedFreelancers
+      }
+    });
+  } catch (error) {
+    handleContractError(error, res);
+  }
+});
+
+// Health check
+router.get('/health', async (req, res) => {
+  try {
+    // Check contract connectivity
+    const platformCounter = await freelancePlatformContract.projectCounter();
+    const registryStats = await userRegistryContract.totalRegisteredUsers();
+
+    res.json({
+      success: true,
+      data: {
+        status: 'healthy',
+        contracts: {
+          freelancePlatform: {
+            address: CONTRACTS.freelancePlatform.address,
+            projectCounter: platformCounter.toString()
+          },
+          userRegistry: {
+            address: CONTRACTS.userRegistry.address,
+            totalUsers: registryStats.toString()
+          }
+        },
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Health check failed',
+      details: error.message
+    });
+  }
+});
+
+// Get contract addresses and ABIs (for frontend integration)
+router.get('/contracts', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      contracts: CONTRACTS,
+      network: {
+        rpcUrl: process.env.RPC_URL || "http://localhost:8545",
+        chainId: process.env.CHAIN_ID || "1337"
+      }
+    }
+  });
+});
+
+module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//------------------------------------------MOCKED-------------------------------------------------------------------------------
+// const express = require('express');
+// const { ethers } = require('ethers');
+// const router = express.Router();
+
+// const freelancePlatform = require('../abi/FreelancePlatform.json');
+// const userRegistry=require('../abis/UserRegistry.json')
+
+
+// // Mock database - In production, use PostgreSQL/MongoDB
+// const mockDB = {
+//   projects: new Map(),
+//   applications: new Map(),
+//   milestones: new Map(),
+//   users: new Map(),
+//   messages: new Map()
+// };
+
+// // Contract configuration - Update these with your deployed contract details
+// const CONTRACT_CONFIG = {
+//   address: process.env.CONTRACT_ADDRESS || "0x1234567890123456789012345678901234567890",
+//   abi: freelancePlatform || [], // Add your contract ABI here
+//   rpcUrl: process.env.RPC_URL || "http://localhost:8545"
+// };
+
+// // Initialize provider (for demo purposes)
+// const provider = new ethers.JsonRpcProvider(CONTRACT_CONFIG.rpcUrl);
+
+// // Utility functions
+// const generateId = () => Math.floor(Math.random() * 1000000);
+// const validateAddress = (address) => ethers.isAddress(address);
+// const validateAmount = (amount) => !isNaN(amount) && parseFloat(amount) > 0;
+
+// // Middleware for validating wallet addresses
+// const validateWallet = (req, res, next) => {
+//   const walletAddress = req.headers['x-wallet-address'] || req.body.walletAddress;
+//   if (!walletAddress || !validateAddress(walletAddress)) {
+//     return res.status(400).json({
+//       success: false,
+//       error: 'Valid wallet address required in x-wallet-address header or body'
+//     });
+//   }
+//   req.userAddress = walletAddress;
+//   next();
+// };
+
+// // ==================== PROJECT ROUTES ====================
+
+// // Create new project
+// router.post('/projects', validateWallet, (req, res) => {
+//   try {
+//     const {
+//       title,
+//       description,
+//       requirements = [],
+//       skills = [],
+//       category,
+//       budget,
+//       applicationPeriodDays = 7,
+//       expectedMilestones = 1
+//     } = req.body;
+
+//     // Validate required fields
+//     if (!title || !description || !budget) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Title, description, and budget are required'
+//       });
+//     }
+
+//     if (!validateAmount(budget)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Budget must be a valid positive number'
+//       });
+//     }
+
+//     const projectId = generateId();
+//     const project = {
+//       id: projectId,
+//       blockchainId: null, // Will be set when contract is called
+//       clientAddress: req.userAddress,
+//       title,
+//       description,
+//       requirements,
+//       skills,
+//       category: category || 'General',
+//       budget: parseFloat(budget),
+//       applicationPeriodDays,
+//       expectedMilestones,
+//       status: 'draft',
+//       applicationsCount: 0,
+//       shortlistedFreelancers: [],
+//       selectedFreelancer: null,
+//       createdAt: new Date().toISOString(),
+//       applicationDeadline: new Date(Date.now() + applicationPeriodDays * 24 * 60 * 60 * 1000).toISOString()
+//     };
+
+//     mockDB.projects.set(projectId, project);
+
+//     res.status(201).json({
+//       success: true,
+//       data: project,
+//       message: 'Project created successfully. Next step: deposit funds to activate.'
+//     });
+//   } catch (error) {
+//     console.error('Create project error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Get all projects (with filtering)
+// router.get('/projects', (req, res) => {
+//   try {
+//     const {
+//       status,
+//       category,
+//       minBudget,
+//       maxBudget,
+//       skills,
+//       clientAddress,
+//       page = 1,
+//       limit = 20
+//     } = req.query;
+
+//     let projects = Array.from(mockDB.projects.values());
+
+//     // Apply filters
+//     if (status) {
+//       projects = projects.filter(p => p.status === status);
+//     }
+//     if (category) {
+//       projects = projects.filter(p => p.category === category);
+//     }
+//     if (minBudget) {
+//       projects = projects.filter(p => p.budget >= parseFloat(minBudget));
+//     }
+//     if (maxBudget) {
+//       projects = projects.filter(p => p.budget <= parseFloat(maxBudget));
+//     }
+//     if (skills) {
+//       const skillsArray = skills.split(',');
+//       projects = projects.filter(p => 
+//         skillsArray.some(skill => p.skills.includes(skill.trim()))
+//       );
+//     }
+//     if (clientAddress) {
+//       projects = projects.filter(p => p.clientAddress.toLowerCase() === clientAddress.toLowerCase());
+//     }
+
+//     // Pagination
+//     const startIndex = (page - 1) * limit;
+//     const endIndex = startIndex + parseInt(limit);
+//     const paginatedProjects = projects.slice(startIndex, endIndex);
+
+//     res.json({
+//       success: true,
+//       data: paginatedProjects,
+//       pagination: {
+//         currentPage: parseInt(page),
+//         totalPages: Math.ceil(projects.length / limit),
+//         totalItems: projects.length,
+//         itemsPerPage: parseInt(limit)
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Get projects error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Get project by ID
+// router.get('/projects/:id', (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const project = mockDB.projects.get(projectId);
+
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     // Get applications for this project
+//     const applications = Array.from(mockDB.applications.values())
+//       .filter(app => app.projectId === projectId);
+
+//     res.json({
+//       success: true,
+//       data: {
+//         ...project,
+//         applications: applications.length,
+//         applicationsDetail: applications
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Get project error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Deposit funds to project
+// router.post('/projects/:id/deposit', validateWallet, (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { amount, txHash } = req.body;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can deposit funds'
+//       });
+//     }
+
+//     if (!validateAmount(amount) || parseFloat(amount) < project.budget) {
+//       return res.status(400).json({
+//         success: false,
+//         error: `Amount must be at least ${project.budget} ETH`
+//       });
+//     }
+
+//     // Update project status
+//     project.status = 'open';
+//     project.escrowAmount = parseFloat(amount);
+//     project.txHash = txHash;
+//     project.fundedAt = new Date().toISOString();
+
+//     mockDB.projects.set(projectId, project);
+
+//     res.json({
+//       success: true,
+//       data: project,
+//       message: 'Funds deposited successfully. Project is now open for applications.'
+//     });
+//   } catch (error) {
+//     console.error('Deposit funds error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Apply for project
+// router.post('/projects/:id/apply', validateWallet, (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const {
+//       proposedRate,
+//       estimatedDuration,
+//       proposalText,
+//       portfolioLinks = [],
+//       availability
+//     } = req.body;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.status !== 'open') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Project is not accepting applications'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() === req.userAddress.toLowerCase()) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Client cannot apply to their own project'
+//       });
+//     }
+
+//     // Check if already applied
+//     const existingApplication = Array.from(mockDB.applications.values())
+//       .find(app => app.projectId === projectId && app.freelancerAddress.toLowerCase() === req.userAddress.toLowerCase());
+
+//     if (existingApplication) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'You have already applied to this project'
+//       });
+//     }
+
+//     const applicationId = generateId();
+//     const application = {
+//       id: applicationId,
+//       projectId,
+//       freelancerAddress: req.userAddress,
+//       proposedRate: parseFloat(proposedRate) || project.budget,
+//       estimatedDuration: estimatedDuration || 'Not specified',
+//       proposalText: proposalText || '',
+//       portfolioLinks,
+//       availability: availability || 'Available immediately',
+//       status: 'pending',
+//       appliedAt: new Date().toISOString()
+//     };
+
+//     mockDB.applications.set(applicationId, application);
+
+//     // Update project applications count
+//     project.applicationsCount += 1;
+//     mockDB.projects.set(projectId, project);
+
+//     res.status(201).json({
+//       success: true,
+//       data: application,
+//       message: 'Application submitted successfully'
+//     });
+//   } catch (error) {
+//     console.error('Apply for project error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Shortlist freelancers
+// router.post('/projects/:id/shortlist', validateWallet, (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { freelancerAddresses } = req.body;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can shortlist freelancers'
+//       });
+//     }
+
+//     if (!Array.isArray(freelancerAddresses) || freelancerAddresses.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Must provide array of freelancer addresses'
+//       });
+//     }
+
+//     if (freelancerAddresses.length > 10) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Cannot shortlist more than 10 freelancers'
+//       });
+//     }
+
+//     // Validate all addresses are valid and have applied
+//     for (const address of freelancerAddresses) {
+//       if (!validateAddress(address)) {
+//         return res.status(400).json({
+//           success: false,
+//           error: `Invalid address: ${address}`
+//         });
+//       }
+
+//       const hasApplied = Array.from(mockDB.applications.values())
+//         .some(app => app.projectId === projectId && app.freelancerAddress.toLowerCase() === address.toLowerCase());
+
+//       if (!hasApplied) {
+//         return res.status(400).json({
+//           success: false,
+//           error: `Freelancer ${address} has not applied to this project`
+//         });
+//       }
+//     }
+
+//     // Update project
+//     project.shortlistedFreelancers = freelancerAddresses;
+//     project.status = 'selecting';
+//     mockDB.projects.set(projectId, project);
+
+//     // Update application statuses
+//     Array.from(mockDB.applications.values())
+//       .filter(app => app.projectId === projectId)
+//       .forEach(app => {
+//         if (freelancerAddresses.some(addr => addr.toLowerCase() === app.freelancerAddress.toLowerCase())) {
+//           app.status = 'shortlisted';
+//         } else {
+//           app.status = 'rejected';
+//         }
+//         mockDB.applications.set(app.id, app);
+//       });
+
+//     res.json({
+//       success: true,
+//       data: project,
+//       message: `${freelancerAddresses.length} freelancers shortlisted successfully`
+//     });
+//   } catch (error) {
+//     console.error('Shortlist freelancers error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Select freelancer
+// router.post('/projects/:id/select', validateWallet, (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { freelancerAddress, txHash } = req.body;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can select freelancer'
+//       });
+//     }
+
+//     if (!validateAddress(freelancerAddress)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Invalid freelancer address'
+//       });
+//     }
+
+//     if (project.selectedFreelancer) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Freelancer already selected for this project'
+//       });
+//     }
+
+//     // Check if freelancer was shortlisted (if shortlisting was done)
+//     if (project.shortlistedFreelancers.length > 0) {
+//       const isShortlisted = project.shortlistedFreelancers
+//         .some(addr => addr.toLowerCase() === freelancerAddress.toLowerCase());
+      
+//       if (!isShortlisted) {
+//         return res.status(400).json({
+//           success: false,
+//           error: 'Freelancer was not shortlisted'
+//         });
+//       }
+//     }
+
+//     // Update project
+//     project.selectedFreelancer = freelancerAddress;
+//     project.status = 'negotiating';
+//     project.selectedAt = new Date().toISOString();
+//     project.selectionTxHash = txHash;
+//     mockDB.projects.set(projectId, project);
+
+//     res.json({
+//       success: true,
+//       data: project,
+//       message: 'Freelancer selected successfully. Waiting for acceptance.'
+//     });
+//   } catch (error) {
+//     console.error('Select freelancer error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Accept project (by freelancer)
+// router.post('/projects/:id/accept', validateWallet, (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { txHash } = req.body;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.selectedFreelancer?.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only selected freelancer can accept project'
+//       });
+//     }
+
+//     if (project.status !== 'negotiating') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Project is not in negotiating status'
+//       });
+//     }
+
+//     // Update project
+//     project.freelancerAccepted = true;
+//     project.acceptedAt = new Date().toISOString();
+//     project.acceptanceTxHash = txHash;
+//     mockDB.projects.set(projectId, project);
+
+//     res.json({
+//       success: true,
+//       data: project,
+//       message: 'Project accepted successfully. Ready for milestone agreement.'
+//     });
+//   } catch (error) {
+//     console.error('Accept project error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // ==================== MILESTONE ROUTES ====================
+
+// // Create milestones (agree on milestones)
+// router.post('/projects/:id/milestones', validateWallet, (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { milestones, txHash } = req.body;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can create milestones'
+//       });
+//     }
+
+//     if (project.status !== 'negotiating' || !project.freelancerAccepted) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Project must be accepted by freelancer first'
+//       });
+//     }
+
+//     if (!Array.isArray(milestones) || milestones.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Must provide array of milestones'
+//       });
+//     }
+
+//     // Validate milestones
+//     let totalAmount = 0;
+//     for (const milestone of milestones) {
+//       if (!milestone.title || !milestone.amount || !milestone.deadline) {
+//         return res.status(400).json({
+//           success: false,
+//           error: 'Each milestone must have title, amount, and deadline'
+//         });
+//       }
+      
+//       if (!validateAmount(milestone.amount)) {
+//         return res.status(400).json({
+//           success: false,
+//           error: `Invalid amount for milestone: ${milestone.title}`
+//         });
+//       }
+      
+//       totalAmount += parseFloat(milestone.amount);
+//     }
+
+//     if (totalAmount > project.escrowAmount) {
+//       return res.status(400).json({
+//         success: false,
+//         error: `Total milestone amount (${totalAmount}) exceeds escrow balance (${project.escrowAmount})`
+//       });
+//     }
+
+//     // Create milestone records
+//     const createdMilestones = [];
+//     for (let i = 0; i < milestones.length; i++) {
+//       const milestoneData = milestones[i];
+//       const milestoneId = generateId();
+      
+//       const milestone = {
+//         id: milestoneId,
+//         blockchainId: null, // Will be set when contract is called
+//         projectId,
+//         title: milestoneData.title,
+//         description: milestoneData.description || '',
+//         amount: parseFloat(milestoneData.amount),
+//         deadline: new Date(milestoneData.deadline).toISOString(),
+//         status: 'pending',
+//         order: i + 1,
+//         createdAt: new Date().toISOString()
+//       };
+      
+//       mockDB.milestones.set(milestoneId, milestone);
+//       createdMilestones.push(milestone);
+//     }
+
+//     // Update project
+//     project.status = 'active';
+//     project.totalMilestones = milestones.length;
+//     project.milestoneIds = createdMilestones.map(m => m.id);
+//     project.milestonesCreatedAt = new Date().toISOString();
+//     project.milestonesTxHash = txHash;
+//     mockDB.projects.set(projectId, project);
+
+//     res.json({
+//       success: true,
+//       data: {
+//         project,
+//         milestones: createdMilestones
+//       },
+//       message: 'Milestones created successfully. Project is now active.'
+//     });
+//   } catch (error) {
+//     console.error('Create milestones error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Submit milestone work
+// router.post('/milestones/:id/submit', validateWallet, (req, res) => {
+//   try {
+//     const milestoneId = parseInt(req.params.id);
+//     const { deliveryHash, notes, files = [], txHash } = req.body;
+
+//     const milestone = mockDB.milestones.get(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     const project = mockDB.projects.get(milestone.projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.selectedFreelancer?.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only assigned freelancer can submit milestone work'
+//       });
+//     }
+
+//     if (milestone.status !== 'pending') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone is not in pending status'
+//       });
+//     }
+
+//     // Check deadline
+//     if (new Date() > new Date(milestone.deadline)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone deadline has passed'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = 'submitted';
+//     milestone.deliveryHash = deliveryHash || '';
+//     milestone.notes = notes || '';
+//     milestone.files = files;
+//     milestone.submittedAt = new Date().toISOString();
+//     milestone.submissionTxHash = txHash;
+//     mockDB.milestones.set(milestoneId, milestone);
+
+//     res.json({
+//       success: true,
+//       data: milestone,
+//       message: 'Milestone work submitted successfully. Waiting for client review.'
+//     });
+//   } catch (error) {
+//     console.error('Submit milestone error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Approve milestone
+// router.post('/milestones/:id/approve', validateWallet, (req, res) => {
+//   try {
+//     const milestoneId = parseInt(req.params.id);
+//     const { txHash } = req.body;
+
+//     const milestone = mockDB.milestones.get(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     const project = mockDB.projects.get(milestone.projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can approve milestones'
+//       });
+//     }
+
+//     if (milestone.status !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone is not in submitted status'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = 'approved';
+//     milestone.approvedAt = new Date().toISOString();
+//     milestone.approvalTxHash = txHash;
+//     mockDB.milestones.set(milestoneId, milestone);
+
+//     res.json({
+//       success: true,
+//       data: milestone,
+//       message: 'Milestone approved successfully. Ready for payment release.'
+//     });
+//   } catch (error) {
+//     console.error('Approve milestone error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Release payment
+// router.post('/milestones/:id/release', validateWallet, (req, res) => {
+//   try {
+//     const milestoneId = parseInt(req.params.id);
+//     const { txHash } = req.body;
+
+//     const milestone = mockDB.milestones.get(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     const project = mockDB.projects.get(milestone.projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (project.clientAddress.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can release payments'
+//       });
+//     }
+
+//     if (milestone.status !== 'approved') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone must be approved before payment release'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = 'paid';
+//     milestone.paidAt = new Date().toISOString();
+//     milestone.paymentTxHash = txHash;
+//     mockDB.milestones.set(milestoneId, milestone);
+
+//     // Update project completion
+//     const completedMilestones = Array.from(mockDB.milestones.values())
+//       .filter(m => m.projectId === milestone.projectId && m.status === 'paid').length;
+
+//     if (completedMilestones === project.totalMilestones) {
+//       project.status = 'completed';
+//       project.completedAt = new Date().toISOString();
+//       mockDB.projects.set(milestone.projectId, project);
+//     }
+
+//     res.json({
+//       success: true,
+//       data: {
+//         milestone,
+//         project: {
+//           id: project.id,
+//           status: project.status,
+//           completedMilestones,
+//           totalMilestones: project.totalMilestones
+//         }
+//       },
+//       message: 'Payment released successfully.'
+//     });
+//   } catch (error) {
+//     console.error('Release payment error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Dispute milestone
+// router.post('/milestones/:id/dispute', validateWallet, (req, res) => {
+//   try {
+//     const milestoneId = parseInt(req.params.id);
+//     const { reason, txHash } = req.body;
+
+//     const milestone = mockDB.milestones.get(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     const project = mockDB.projects.get(milestone.projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     // Check if user is project participant
+//     const isClient = project.clientAddress.toLowerCase() === req.userAddress.toLowerCase();
+//     const isFreelancer = project.selectedFreelancer?.toLowerCase() === req.userAddress.toLowerCase();
+
+//     if (!isClient && !isFreelancer) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project participants can raise disputes'
+//       });
+//     }
+
+//     if (milestone.status !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Can only dispute submitted milestones'
+//       });
+//     }
+
+//     if (!reason || reason.trim().length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Dispute reason is required'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = 'disputed';
+//     milestone.disputeReason = reason.trim();
+//     milestone.disputedBy = req.userAddress;
+//     milestone.disputedAt = new Date().toISOString();
+//     milestone.disputeTxHash = txHash;
+//     mockDB.milestones.set(milestoneId, milestone);
+
+//     // Update project
+//     project.isDisputed = true;
+//     mockDB.projects.set(milestone.projectId, project);
+
+//     res.json({
+//       success: true,
+//       data: milestone,
+//       message: 'Dispute raised successfully. Platform admin will review.'
+//     });
+//   } catch (error) {
+//     console.error('Dispute milestone error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // ==================== USER ROUTES ====================
+
+// // Get user projects
+// router.get('/users/:address/projects', (req, res) => {
+//   try {
+//     const userAddress = req.params.address;
+    
+//     if (!validateAddress(userAddress)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Invalid wallet address'
+//       });
+//     }
+
+//     const { role = 'all', status, page = 1, limit = 20 } = req.query;
+
+//     let projects = Array.from(mockDB.projects.values());
+
+//     // Filter by role
+//     if (role === 'client' || role === 'all') {
+//       const clientProjects = projects.filter(p => 
+//         p.clientAddress.toLowerCase() === userAddress.toLowerCase()
+//       ).map(p => ({ ...p, userRole: 'client' }));
+      
+//       if (role === 'client') {
+//         projects = clientProjects;
+//       }
+//     }
+
+//     if (role === 'freelancer' || role === 'all') {
+//       const freelancerProjects = projects.filter(p => 
+//         p.selectedFreelancer?.toLowerCase() === userAddress.toLowerCase()
+//       ).map(p => ({ ...p, userRole: 'freelancer' }));
+      
+//       if (role === 'freelancer') {
+//         projects = freelancerProjects;
+//       } else if (role === 'all') {
+//         projects = [...projects.filter(p => p.clientAddress.toLowerCase() === userAddress.toLowerCase()).map(p => ({ ...p, userRole: 'client' })), ...freelancerProjects];
+//       }
+//     }
+
+//     // Filter by status
+//     if (status) {
+//       projects = projects.filter(p => p.status === status);
+//     }
+
+//     // Pagination
+//     const startIndex = (page - 1) * limit;
+//     const endIndex = startIndex + parseInt(limit);
+//     const paginatedProjects = projects.slice(startIndex, endIndex);
+
+//     res.json({
+//       success: true,
+//       data: paginatedProjects,
+//       pagination: {
+//         currentPage: parseInt(page),
+//         totalPages: Math.ceil(projects.length / limit),
+//         totalItems: projects.length,
+//         itemsPerPage: parseInt(limit)
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Get user projects error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Get user reputation
+// router.get('/users/:address/reputation', (req, res) => {
+//   try {
+//     const userAddress = req.params.address;
+    
+//     if (!validateAddress(userAddress)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Invalid wallet address'
+//       });
+//     }
+
+//     // Calculate reputation from completed projects
+//     const userProjects = Array.from(mockDB.projects.values())
+//       .filter(p => p.selectedFreelancer?.toLowerCase() === userAddress.toLowerCase() && p.status === 'completed');
+
+//     const totalEarned = userProjects.reduce((sum, p) => {
+//       const projectMilestones = Array.from(mockDB.milestones.values())
+//         .filter(m => m.projectId === p.id && m.status === 'paid');
+//       return sum + projectMilestones.reduce((mSum, m) => mSum + m.amount, 0);
+//     }, 0);
+
+//     const reputation = {
+//       address: userAddress,
+//       projectsCompleted: userProjects.length,
+//       totalEarned: totalEarned,
+//       averageRating: 4.5, // Mock rating
+//       totalRatings: userProjects.length,
+//       successRate: userProjects.length > 0 ? 100 : 0, // Simplified
+//       skills: [], // Could be calculated from project skills
+//       joinedAt: '2024-01-01T00:00:00.000Z', // Mock date
+//       lastActive: new Date().toISOString()
+//     };
+
+//     res.json({
+//       success: true,
+//       data: reputation
+//     });
+//   } catch (error) {
+//     console.error('Get user reputation error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // ==================== ADMIN ROUTES ====================
+
+// // Resolve dispute (admin only)
+// router.post('/admin/resolve-dispute', (req, res) => {
+//   try {
+//     const { milestoneId, winner, amount, txHash, adminKey } = req.body;
+
+//     // Simple admin authentication - in production use proper JWT/role-based auth
+//     if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'demo-admin-key') {
+//       return res.status(401).json({
+//         success: false,
+//         error: 'Invalid admin credentials'
+//       });
+//     }
+
+//     const milestone = mockDB.milestones.get(parseInt(milestoneId));
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     const project = mockDB.projects.get(milestone.projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (milestone.status !== 'disputed') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone is not in disputed status'
+//       });
+//     }
+
+//     if (!validateAddress(winner)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Invalid winner address'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = winner.toLowerCase() === project.selectedFreelancer?.toLowerCase() ? 'paid' : 'refunded';
+//     milestone.disputeResolvedAt = new Date().toISOString();
+//     milestone.disputeWinner = winner;
+//     milestone.disputeResolutionTxHash = txHash;
+//     mockDB.milestones.set(milestone.id, milestone);
+
+//     // Update project
+//     project.isDisputed = false;
+//     mockDB.projects.set(milestone.projectId, project);
+
+//     res.json({
+//       success: true,
+//       data: {
+//         milestone,
+//         winner,
+//         amount: amount || milestone.amount
+//       },
+//       message: `Dispute resolved in favor of ${winner === project.selectedFreelancer ? 'freelancer' : 'client'}`
+//     });
+//   } catch (error) {
+//     console.error('Resolve dispute error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // ==================== PLATFORM ROUTES ====================
+
+// // Get platform statistics
+// router.get('/platform/stats', (req, res) => {
+//   try {
+//     const projects = Array.from(mockDB.projects.values());
+//     const milestones = Array.from(mockDB.milestones.values());
+//     const applications = Array.from(mockDB.applications.values());
+
+//     const stats = {
+//       totalProjects: projects.length,
+//       activeProjects: projects.filter(p => p.status === 'active').length,
+//       completedProjects: projects.filter(p => p.status === 'completed').length,
+//       totalVolume: milestones
+//         .filter(m => m.status === 'paid')
+//         .reduce((sum, m) => sum + m.amount, 0),
+//       totalApplications: applications.length,
+//       averageProjectBudget: projects.length > 0 
+//         ? projects.reduce((sum, p) => sum + p.budget, 0) / projects.length 
+//         : 0,
+//       topCategories: this.getTopCategories(projects),
+//       recentActivity: this.getRecentActivity(projects, milestones, applications)
+//     };
+
+//     res.json({
+//       success: true,
+//       data: stats
+//     });
+//   } catch (error) {
+//     console.error('Get platform stats error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Helper method for top categories
+// router.getTopCategories = (projects) => {
+//   const categories = {};
+//   projects.forEach(p => {
+//     categories[p.category] = (categories[p.category] || 0) + 1;
+//   });
+  
+//   return Object.entries(categories)
+//     .sort(([,a], [,b]) => b - a)
+//     .slice(0, 5)
+//     .map(([category, count]) => ({ category, count }));
+// };
+
+// // Helper method for recent activity
+// router.getRecentActivity = (projects, milestones, applications) => {
+//   const activities = [];
+  
+//   // Recent projects
+//   projects
+//     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+//     .slice(0, 5)
+//     .forEach(p => {
+//       activities.push({
+//         type: 'project_created',
+//         timestamp: p.createdAt,
+//         data: { projectId: p.id, title: p.title, budget: p.budget }
+//       });
+//     });
+
+//   // Recent milestone completions
+//   milestones
+//     .filter(m => m.status === 'paid' && m.paidAt)
+//     .sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))
+//     .slice(0, 5)
+//     .forEach(m => {
+//       activities.push({
+//         type: 'milestone_completed',
+//         timestamp: m.paidAt,
+//         data: { milestoneId: m.id, projectId: m.projectId, amount: m.amount }
+//       });
+//     });
+
+//   return activities
+//     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+//     .slice(0, 10);
+// };
+
+// // ==================== UTILITY ROUTES ====================
+
+// // Get project applications
+// router.get('/projects/:id/applications', (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { status, page = 1, limit = 20 } = req.query;
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     let applications = Array.from(mockDB.applications.values())
+//       .filter(app => app.projectId === projectId);
+
+//     // Filter by status
+//     if (status) {
+//       applications = applications.filter(app => app.status === status);
+//     }
+
+//     // Sort by application date
+//     applications.sort((a, b) => new Date(b.appliedAt) - new Date(a.appliedAt));
+
+//     // Pagination
+//     const startIndex = (page - 1) * limit;
+//     const endIndex = startIndex + parseInt(limit);
+//     const paginatedApplications = applications.slice(startIndex, endIndex);
+
+//     res.json({
+//       success: true,
+//       data: paginatedApplications,
+//       pagination: {
+//         currentPage: parseInt(page),
+//         totalPages: Math.ceil(applications.length / limit),
+//         totalItems: applications.length,
+//         itemsPerPage: parseInt(limit)
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Get project applications error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Get project milestones
+// router.get('/projects/:id/milestones', (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+
+//     const project = mockDB.projects.get(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     const milestones = Array.from(mockDB.milestones.values())
+//       .filter(m => m.projectId === projectId)
+//       .sort((a, b) => a.order - b.order);
+
+//     res.json({
+//       success: true,
+//       data: milestones
+//     });
+//   } catch (error) {
+//     console.error('Get project milestones error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Get milestone details
+// router.get('/milestones/:id', (req, res) => {
+//   try {
+//     const milestoneId = parseInt(req.params.id);
+
+//     const milestone = mockDB.milestones.get(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     const project = mockDB.projects.get(milestone.projectId);
+    
+//     res.json({
+//       success: true,
+//       data: {
+//         ...milestone,
+//         project: {
+//           id: project.id,
+//           title: project.title,
+//           clientAddress: project.clientAddress,
+//           freelancerAddress: project.selectedFreelancer
+//         }
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Get milestone details error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Search projects
+// router.get('/search/projects', (req, res) => {
+//   try {
+//     const { 
+//       q, 
+//       category, 
+//       minBudget, 
+//       maxBudget, 
+//       skills, 
+//       status = 'open',
+//       sortBy = 'created',
+//       sortOrder = 'desc',
+//       page = 1, 
+//       limit = 20 
+//     } = req.query;
+
+//     let projects = Array.from(mockDB.projects.values());
+
+//     // Text search
+//     if (q) {
+//       const searchTerm = q.toLowerCase();
+//       projects = projects.filter(p => 
+//         p.title.toLowerCase().includes(searchTerm) ||
+//         p.description.toLowerCase().includes(searchTerm) ||
+//         p.skills.some(skill => skill.toLowerCase().includes(searchTerm))
+//       );
+//     }
+
+//     // Apply filters
+//     if (category) {
+//       projects = projects.filter(p => p.category === category);
+//     }
+    
+//     if (status) {
+//       projects = projects.filter(p => p.status === status);
+//     }
+    
+//     if (minBudget) {
+//       projects = projects.filter(p => p.budget >= parseFloat(minBudget));
+//     }
+    
+//     if (maxBudget) {
+//       projects = projects.filter(p => p.budget <= parseFloat(maxBudget));
+//     }
+    
+//     if (skills) {
+//       const skillsArray = skills.split(',').map(s => s.trim().toLowerCase());
+//       projects = projects.filter(p => 
+//         skillsArray.some(skill => 
+//           p.skills.some(pSkill => pSkill.toLowerCase().includes(skill))
+//         )
+//       );
+//     }
+
+//     // Sorting
+//     projects.sort((a, b) => {
+//       let comparison = 0;
+      
+//       switch (sortBy) {
+//         case 'budget':
+//           comparison = a.budget - b.budget;
+//           break;
+//         case 'applications':
+//           comparison = a.applicationsCount - b.applicationsCount;
+//           break;
+//         case 'deadline':
+//           comparison = new Date(a.applicationDeadline) - new Date(b.applicationDeadline);
+//           break;
+//         case 'created':
+//         default:
+//           comparison = new Date(a.createdAt) - new Date(b.createdAt);
+//           break;
+//       }
+      
+//       return sortOrder === 'desc' ? -comparison : comparison;
+//     });
+
+//     // Pagination
+//     const startIndex = (page - 1) * limit;
+//     const endIndex = startIndex + parseInt(limit);
+//     const paginatedProjects = projects.slice(startIndex, endIndex);
+
+//     res.json({
+//       success: true,
+//       data: paginatedProjects,
+//       pagination: {
+//         currentPage: parseInt(page),
+//         totalPages: Math.ceil(projects.length / limit),
+//         totalItems: projects.length,
+//         itemsPerPage: parseInt(limit)
+//       },
+//       filters: {
+//         q, category, minBudget, maxBudget, skills, status, sortBy, sortOrder
+//       }
+//     });
+//   } catch (error) {
+//     console.error('Search projects error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// // Health check for database
+// router.get('/health/db', (req, res) => {
+//   try {
+//     const dbStatus = {
+//       projects: mockDB.projects.size,
+//       applications: mockDB.applications.size,
+//       milestones: mockDB.milestones.size,
+//       users: mockDB.users.size,
+//       messages: mockDB.messages.size,
+//       healthy: true,
+//       timestamp: new Date().toISOString()
+//     };
+
+//     res.json({
+//       success: true,
+//       data: dbStatus
+//     });
+//   } catch (error) {
+//     console.error('Database health check error:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     });
+//   }
+// });
+
+// module.exports = router;
