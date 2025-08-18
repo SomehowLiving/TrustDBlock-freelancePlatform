@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freelance Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loading { opacity: 0.5; pointer-events: none; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <h1 class="text-xl font-semibold text-gray-900">Freelance Platform</h1>
+                <div class="flex items-center space-x-4">
+                    <input type="text" id="walletAddress" placeholder="Enter wallet address (0x...)" 
+                           class="px-3 py-2 border rounded-md text-sm w-64">
+                    <button id="connectWallet" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
+                        Connect Wallet
+                    </button>
+                    <div id="userInfo" class="hidden text-sm text-gray-600"></div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Tabs -->
+        <div class="border-b border-gray-200 mb-6">
+            <nav class="-mb-px flex space-x-8">
+                <button class="tab-btn tab-active py-2 px-1 text-sm font-medium" data-tab="projects">
+                    Projects
+                </button>
+                <button class="tab-btn py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="create-project">
+                    Create Project
+                </button>
+                <button class="tab-btn py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="dashboard">
+                    Dashboard
+                </button>
+                <button class="tab-btn py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="register">
+                    Register User
+                </button>
+                <button class="tab-btn py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="admin">
+                    Admin
+                </button>
+            </nav>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="messages" class="mb-4"></div>
+
+        <!-- Projects Tab -->
+        <div id="projects-tab" class="tab-content">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-900">Projects</h2>
+                <div class="flex space-x-4">
+                    <input type="text" id="searchProjects" placeholder="Search projects..." 
+                           class="px-3 py-2 border rounded-md">
+                    <select id="filterStatus" class="px-3 py-2 border rounded-md">
+                        <option value="">All Status</option>
+                        <option value="open">Open</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                    <button id="loadProjects" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                        Load Projects
+                    </button>
+                </div>
+            </div>
+            <div id="projectsList" class="grid gap-4"></div>
+        </div>
+
+        <!-- Create Project Tab -->
+        <div id="create-project-tab" class="tab-content hidden">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">Create New Project</h2>
+            <form id="createProjectForm" class="bg-white p-6 rounded-lg shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Project Title</label>
+                        <input type="text" name="title" required class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Budget (ETH)</label>
+                        <input type="number" name="budget" step="0.01" required class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                        <textarea name="description" rows="4" required class="w-full px-3 py-2 border rounded-md"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                        <select name="category" class="w-full px-3 py-2 border rounded-md">
+                            <option value="Web Development">Web Development</option>
+                            <option value="Mobile Development">Mobile Development</option>
+                            <option value="Design">Design</option>
+                            <option value="Writing">Writing</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Deadline</label>
+                        <input type="date" name="deadline" required class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Skills (comma-separated)</label>
+                        <input type="text" name="skills" placeholder="React, Node.js, MongoDB" class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Expected Milestones</label>
+                        <input type="number" name="expectedMilestones" value="1" min="1" class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                </div>
+                <button type="submit" class="mt-6 bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700">
+                    Create Project
+                </button>
+            </form>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard-tab" class="tab-content hidden">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">Dashboard</h2>
+            <div id="dashboardContent" class="text-gray-600">
+                Select a wallet address and click "Load Dashboard" to view your dashboard.
+            </div>
+            <button id="loadDashboard" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                Load Dashboard
+            </button>
+        </div>
+
+        <!-- Register User Tab -->
+        <div id="register-tab" class="tab-content hidden">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">Register New User</h2>
+            <form id="registerUserForm" class="bg-white p-6 rounded-lg shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                        <input type="text" name="username" required class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <input type="email" name="email" required class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                        <input type="password" name="password" required class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                        <select name="role" required class="w-full px-3 py-2 border rounded-md">
+                            <option value="">Select Role</option>
+                            <option value="client">Client</option>
+                            <option value="freelancer">Freelancer</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Bio (Optional)</label>
+                        <textarea name="bio" rows="3" class="w-full px-3 py-2 border rounded-md"></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Skills (comma-separated)</label>
+                        <input type="text" name="skills" placeholder="JavaScript, React, Node.js" class="w-full px-3 py-2 border rounded-md">
+                    </div>
+                </div>
+                <button type="submit" class="mt-6 bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700">
+                    Register User
+                </button>
+            </form>
+        </div>
+
+        <!-- Admin Tab -->
+        <div id="admin-tab" class="tab-content hidden">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6">Admin Panel</h2>
+            
+            <!-- Platform Stats -->
+            <div class="bg-white p-6 rounded-lg shadow-sm mb-6">
+                <h3 class="text-lg font-medium mb-4">Platform Statistics</h3>
+                <button id="loadStats" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 mb-4">
+                    Load Stats
+                </button>
+                <div id="platformStats" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+            </div>
+
+            <!-- Disputes Management -->
+            <div class="bg-white p-6 rounded-lg shadow-sm">
+                <h3 class="text-lg font-medium mb-4">Dispute Management</h3>
+                <div class="flex space-x-4 mb-4">
+                    <input type="text" id="adminKey" placeholder="Admin Key" class="px-3 py-2 border rounded-md">
+                    <button id="loadDisputes" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                        Load Disputes
+                    </button>
+                </div>
+                <div id="disputesList" class="space-y-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Detail Modal -->
+    <div id="projectModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold">Project Details</h3>
+                    <button id="closeModal" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                </div>
+                <div id="projectDetails"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:3000/api'; // Adjust this to your backend URL
+        let currentWallet = '';
+        let currentUser = null;
+
+        // Utility functions
+        function showMessage(message, type = 'info') {
+            const messagesDiv = document.getElementById('messages');
+            const alertClass = type === 'error' ? 'bg-red-100 border-red-400 text-red-700' : 
+                              type === 'success' ? 'bg-green-100 border-green-400 text-green-700' :
+                              'bg-blue-100 border-blue-400 text-blue-700';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `${alertClass} px-4 py-3 rounded border mb-4`;
+            messageDiv.innerHTML = `
+                <span>${message}</span>
+                <button onclick="this.parentElement.remove()" class="float-right font-bold">&times;</button>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => messageDiv.remove(), 5000);
+        }
+
+        async function apiCall(endpoint, options = {}) {
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+
+            if (currentWallet) {
+                headers['x-wallet-address'] = currentWallet;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    ...options,
+                    headers
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                }
+
+                return data;
+            } catch (error) {
+                console.error('API Error:', error);
+                throw error;
+            }
+        }
+
+        function formatDate(dateString) {
+            return new Date(dateString).toLocaleDateString();
+        }
+
+        function formatEther(amount) {
+            return parseFloat(amount).toFixed(4);
+        }
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Remove active class from all tabs
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('tab-active');
+                    b.classList.add('text-gray-500', 'hover:text-gray-700');
+                });
+                
+                // Add active class to clicked tab
+                btn.classList.add('tab-active');
+                btn.classList.remove('text-gray-500', 'hover:text-gray-700');
+                
+                // Hide all tab contents
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.add('hidden');
+                });
+                
+                // Show selected tab content
+                const tabId = btn.dataset.tab + '-tab';
+                document.getElementById(tabId).classList.remove('hidden');
+            });
+        });
+
+        // Wallet connection
+        document.getElementById('connectWallet').addEventListener('click', async () => {
+            const walletInput = document.getElementById('walletAddress');
+            const wallet = walletInput.value.trim();
+            
+            if (!wallet || !wallet.startsWith('0x') || wallet.length !== 42) {
+                showMessage('Please enter a valid wallet address (0x...)', 'error');
+                return;
+            }
+
+            currentWallet = wallet.toLowerCase();
+            
+            try {
+                // Try to get user profile
+                const userData = await apiCall(`/users/${currentWallet}`);
+                currentUser = userData.data.user;
+                
+                document.getElementById('userInfo').innerHTML = `
+                    Connected: ${currentUser.username} (${currentUser.role})
+                `;
+                document.getElementById('userInfo').classList.remove('hidden');
+                
+                showMessage(`Connected as ${currentUser.username}`, 'success');
+                loadProjects(); // Auto-load projects
+            } catch (error) {
+                // User might not exist, that's okay
+                document.getElementById('userInfo').innerHTML = `Connected: ${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+                document.getElementById('userInfo').classList.remove('hidden');
+                showMessage('Wallet connected. Register as a user to access full features.', 'info');
+            }
+        });
+
+        // Load projects
+        async function loadProjects() {
+            try {
+                const searchTerm = document.getElementById('searchProjects').value;
+                const status = document.getElementById('filterStatus').value;
+                
+                let url = '/projects?';
+                if (status) url += `status=${status}&`;
+                if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`;
+                
+                const response = await apiCall(url);
+                displayProjects(response.data);
+            } catch (error) {
+                showMessage(`Error loading projects: ${error.message}`, 'error');
+            }
+        }
+
+        function displayProjects(projects) {
+            const container = document.getElementById('projectsList');
+            
+            if (projects.length === 0) {
+                container.innerHTML = '<p class="text-gray-600 text-center py-8">No projects found.</p>';
+                return;
+            }
+
+            container.innerHTML = projects.map(project => `
+                <div class="bg-white p-6 rounded-lg shadow-sm border">
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">${project.title}</h3>
+                        <span class="px-2 py-1 text-xs rounded-full ${getStatusColor(project.status)}">
+                            ${project.status}
+                        </span>
+                    </div>
+                    <p class="text-gray-600 mb-4">${project.description.substring(0, 150)}...</p>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        ${(project.skills || []).map(skill => 
+                            `<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">${skill}</span>`
+                        ).join('')}
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div class="text-sm text-gray-600">
+                            <p>Budget: <span class="font-semibold">${project.budget.total} ETH</span></p>
+                            <p>Deadline: ${formatDate(project.timeline.deadline)}</p>
+                            <p>Applications: ${project.applications?.count || 0}</p>
+                        </div>
+                        <div class="space-x-2">
+                            <button onclick="viewProject('${project._id || project.projectId}')" 
+                                    class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                View Details
+                            </button>
+                            ${project.status === 'open' ? `
+                                <button onclick="showApplyForm('${project._id || project.projectId}')" 
+                                        class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                                    Apply
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getStatusColor(status) {
+            switch (status) {
+                case 'open': return 'bg-green-100 text-green-800';
+                case 'active': return 'bg-blue-100 text-blue-800';
+                case 'completed': return 'bg-gray-100 text-gray-800';
+                case 'disputed': return 'bg-red-100 text-red-800';
+                default: return 'bg-gray-100 text-gray-800';
+            }
+        }
+
+        // View project details
+        async function viewProject(projectId) {
+            try {
+                const response = await apiCall(`/projects/${projectId}`);
+                const project = response.data.project;
+                const applications = response.data.applicationsDetail || [];
+                const milestones = response.data.milestonesDetail || [];
+
+                document.getElementById('projectDetails').innerHTML = `
+                    <div class="space-y-6">
+                        <div>
+                            <h4 class="text-lg font-semibold mb-2">${project.title}</h4>
+                            <p class="text-gray-600">${project.description}</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <h5 class="font-medium mb-2">Project Info</h5>
+                                <p><strong>Budget:</strong> ${project.budget.total} ETH</p>
+                                <p><strong>Status:</strong> ${project.status}</p>
+                                <p><strong>Category:</strong> ${project.category}</p>
+                                <p><strong>Deadline:</strong> ${formatDate(project.timeline.deadline)}</p>
+                            </div>
+                            <div>
+                                <h5 class="font-medium mb-2">Client Info</h5>
+                                <p><strong>Address:</strong> ${project.client.address}</p>
+                                <p><strong>Name:</strong> ${project.client.displayName}</p>
+                            </div>
+                        </div>
+
+                        ${project.skills && project.skills.length > 0 ? `
+                            <div>
+                                <h5 class="font-medium mb-2">Required Skills</h5>
+                                <div class="flex flex-wrap gap-2">
+                                    ${project.skills.map(skill => 
+                                        `<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">${skill}</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        ${applications.length > 0 ? `
+                            <div>
+                                <h5 class="font-medium mb-2">Applications (${applications.length})</h5>
+                                <div class="space-y-2 max-h-40 overflow-y-auto">
+                                    ${applications.map(app => `
+                                        <div class="p-3 bg-gray-50 rounded">
+                                            <p><strong>Freelancer:</strong> ${app.freelancer.displayName}</p>
+                                            <p><strong>Proposed Budget:</strong> ${app.proposal.proposedBudget} ETH</p>
+                                            <p><strong>Timeline:</strong> ${app.proposal.proposedTimeline} days</p>
+                                            <p class="text-sm text-gray-600">${app.proposal.coverLetter.substring(0, 100)}...</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        ${milestones.length > 0 ? `
+                            <div>
+                                <h5 class="font-medium mb-2">Milestones (${milestones.length})</h5>
+                                <div class="space-y-2">
+                                    ${milestones.map(milestone => `
+                                        <div class="p-3 bg-gray-50 rounded flex justify-between items-center">
+                                            <div>
+                                                <p><strong>${milestone.details.title}</strong></p>
+                                                <p class="text-sm text-gray-600">${milestone.details.amount} ETH - ${milestone.status}</p>
+                                            </div>
+                                            ${milestone.status === 'submitted' && currentWallet === project.client.address ? `
+                                                <button onclick="approveMilestone('${milestone._id || milestone.milestoneId}')" 
+                                                        class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                                                    Approve
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                document.getElementById('projectModal').classList.remove('hidden');
+            } catch (error) {
+                showMessage(`Error loading project: ${error.message}`, 'error');
+            }
+        }
+
+        // Apply for project
+        function showApplyForm(projectId) {
+            if (!currentWallet) {
+                showMessage('Please connect your wallet first', 'error');
+                return;
+            }
+
+            const coverLetter = prompt('Enter your cover letter:');
+            const proposedBudget = prompt('Enter your proposed budget (ETH):');
+            
+            if (coverLetter && proposedBudget) {
+                applyForProject(projectId, coverLetter, proposedBudget);
+            }
+        }
+
+        async function applyForProject(projectId, coverLetter, proposedBudget) {
+            try {
+                const response = await apiCall(`/projects/${projectId}/apply`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        coverLetter,
+                        proposedBudget: parseFloat(proposedBudget),
+                        proposedTimeline: 30
+                    })
+                });
+
+                showMessage('Application submitted successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+            } catch (error) {
+                showMessage(`Application failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Approve milestone
+        async function approveMilestone(milestoneId) {
+            const rating = prompt('Rate the work (1-5):');
+            const feedback = prompt('Provide feedback (optional):');
+            
+            try {
+                const response = await apiCall(`/milestones/${milestoneId}/approve`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        rating: parseInt(rating) || 5,
+                        feedback: feedback || ''
+                    })
+                });
+
+                showMessage('Milestone approved successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+            } catch (error) {
+                showMessage(`Approval failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Create project form
+        document.getElementById('createProjectForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!currentWallet) {
+                showMessage('Please connect your wallet first', 'error');
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const projectData = {
+                title: formData.get('title'),
+                description: formData.get('description'),
+                budget: parseFloat(formData.get('budget')),
+                category: formData.get('category'),
+                skills: formData.get('skills').split(',').map(s => s.trim()).filter(s => s),
+                timeline: {
+                    deadline: formData.get('deadline')
+                },
+                expectedMilestones: parseInt(formData.get('expectedMilestones'))
+            };
+
+            try {
+                const response = await apiCall('/projects', {
+                    method: 'POST',
+                    body: JSON.stringify(projectData)
+                });
+
+                showMessage('Project created successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+                e.target.reset();
+            } catch (error) {
+                showMessage(`Project creation failed: ${error.message}`, 'error');
+            }
+        });
+
+        // Register user form
+        document.getElementById('registerUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!currentWallet) {
+                showMessage('Please connect your wallet first', 'error');
+                return;
+            }
+
+            const formData = new FormData(e.target);
+            const userData = {
+                username: formData.get('username'),
+                email: formData.get('email'),
+                password: formData.get('password'),
+                role: formData.get('role'),
+                bio: formData.get('bio'),
+                skills: formData.get('skills').split(',').map(s => s.trim()).filter(s => s)
+            };
+
+            try {
+                const response = await apiCall('/users/register', {
+                    method: 'POST',
+                    body: JSON.stringify(userData)
+                });
+
+                showMessage('User registered successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+                e.target.reset();
+            } catch (error) {
+                showMessage(`Registration failed: ${error.message}`, 'error');
+            }
+        });
+
+        // Load dashboard
+        document.getElementById('loadDashboard').addEventListener('click', async () => {
+            if (!currentWallet) {
+                showMessage('Please connect your wallet first', 'error');
+                return;
+            }
+
+            try {
+                const response = await apiCall(`/users/${currentWallet}/dashboard`);
+                const data = response.data;
+
+                document.getElementById('dashboardContent').innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-white p-6 rounded-lg shadow-sm">
+                            6 rounded-lg shadow-sm">
+                            <h3 class="text-lg font-medium mb-4">User Info</h3>
+                            <p><strong>Username:</strong> ${data.user.username}</p>
+                            <p><strong>Role:</strong> ${data.user.role}</p>
+                            <p><strong>Total Projects:</strong> ${data.user.reputation.totalProjects}</p>
+                            <p><strong>Success Rate:</strong> ${data.user.reputation.successRate.toFixed(1)}%</p>
+                        </div>
+                        
+                        <div class="bg-white p-6 rounded-lg shadow-sm">
+                            <h3 class="text-lg font-medium mb-4">Earnings</h3>
+                            <p><strong>Total Earned:</strong> ${data.statistics.earnings.totalEarned} ETH</p>
+                            <p><strong>Completed Projects:</strong> ${data.statistics.completedProjects}</p>
+                            <p><strong>Average Rating:</strong> ${data.user.reputation.averageRating.toFixed(1)}/5</p>
+                        </div>
+                        
+                        <div class="bg-white p-6 rounded-lg shadow-sm">
+                            <h3 class="text-lg font-medium mb-4">Recent Activity</h3>
+                            <div class="space-y-2">
+                                ${data.recentActivity.projects.slice(0, 3).map(project => `
+                                    <div class="text-sm">
+                                        <p class="font-medium">${project.title}</p>
+                                        <p class="text-gray-600">${project.status} - ${project.budget.total} ETH</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    ${data.recentActivity.milestones.length > 0 ? `
+                        <div class="bg-white p-6 rounded-lg shadow-sm mt-6">
+                            <h3 class="text-lg font-medium mb-4">Pending Milestones</h3>
+                            <div class="space-y-3">
+                                ${data.recentActivity.milestones.map(milestone => `
+                                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                        <div>
+                                            <p class="font-medium">${milestone.details.title}</p>
+                                            <p class="text-sm text-gray-600">${milestone.details.amount} ETH - Due: ${formatDate(milestone.timeline.deadline)}</p>
+                                        </div>
+                                        <span class="px-2 py-1 text-xs rounded-full ${getStatusColor(milestone.status)}">
+                                            ${milestone.status}
+                                        </span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+            } catch (error) {
+                showMessage(`Error loading dashboard: ${error.message}`, 'error');
+            }
+        });
+
+        // Load platform stats
+        document.getElementById('loadStats').addEventListener('click', async () => {
+            try {
+                const response = await apiCall('/platform/stats');
+                const stats = response.data;
+
+                document.getElementById('platformStats').innerHTML = `
+                    <div class="bg-gray-50 p-4 rounded">
+                        <h4 class="font-medium mb-2">Projects</h4>
+                        <p>Total: ${stats.projects.total}</p>
+                        <p>Active: ${stats.projects.active}</p>
+                        <p>Completed: ${stats.projects.completed}</p>
+                        <p>Success Rate: ${stats.projects.successRate.toFixed(1)}%</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <h4 class="font-medium mb-2">Users</h4>
+                        <p>Total: ${stats.users.total}</p>
+                        <p>Freelancers: ${stats.users.freelancers}</p>
+                        <p>Clients: ${stats.users.clients}</p>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded">
+                        <h4 class="font-medium mb-2">Platform</h4>
+                        <p>Volume: ${stats.platform.totalVolume} ETH</p>
+                        <p>Transactions: ${stats.platform.totalTransactions}</p>
+                        <p>Disputes: ${stats.platform.totalDisputes}</p>
+                        <p>Dispute Rate: ${stats.platform.disputeRate.toFixed(1)}%</p>
+                    </div>
+                `;
+            } catch (error) {
+                showMessage(`Error loading stats: ${error.message}`, 'error');
+            }
+        });
+
+        // Load disputes
+        document.getElementById('loadDisputes').addEventListener('click', async () => {
+            const adminKey = document.getElementById('adminKey').value;
+            
+            if (!adminKey) {
+                showMessage('Please enter admin key', 'error');
+                return;
+            }
+
+            try {
+                const response = await apiCall('/admin/disputes');
+                const disputes = response.data;
+
+                document.getElementById('disputesList').innerHTML = disputes.length > 0 ? disputes.map(dispute => `
+                    <div class="border p-4 rounded">
+                        <div class="flex justify-between items-start mb-3">
+                            <h4 class="font-medium">Dispute #${dispute.disputeId}</h4>
+                            <span class="px-2 py-1 text-xs rounded-full ${getStatusColor(dispute.resolution.status)}">
+                                ${dispute.resolution.status}
+                            </span>
+                        </div>
+                        <p><strong>Project ID:</strong> ${dispute.projectId}</p>
+                        <p><strong>Milestone ID:</strong> ${dispute.milestoneId}</p>
+                        <p><strong>Raised By:</strong> ${dispute.parties.raisedBy}</p>
+                        <p><strong>Reason:</strong> ${dispute.details.reason}</p>
+                        <p><strong>Category:</strong> ${dispute.details.category}</p>
+                        
+                        ${dispute.resolution.status === 'open' ? `
+                            <div class="mt-4 space-x-2">
+                                <button onclick="resolveDispute('${dispute.disputeId}', '${dispute.parties.client.wallet}', '${adminKey}')" 
+                                        class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                    Resolve for Client
+                                </button>
+                                <button onclick="resolveDispute('${dispute.disputeId}', '${dispute.parties.freelancer.wallet}', '${adminKey}')" 
+                                        class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                                    Resolve for Freelancer
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="mt-4 p-3 bg-gray-100 rounded">
+                                <p><strong>Resolved:</strong> Winner - ${dispute.resolution.winner}</p>
+                                <p><strong>Reasoning:</strong> ${dispute.resolution.reasoning}</p>
+                                <p><strong>Amount:</strong> ${dispute.resolution.amount} ETH</p>
+                            </div>
+                        `}
+                    </div>
+                `).join('') : '<p class="text-gray-600">No disputes found.</p>';
+            } catch (error) {
+                showMessage(`Error loading disputes: ${error.message}`, 'error');
+            }
+        });
+
+        // Resolve dispute
+        async function resolveDispute(disputeId, winner, adminKey) {
+            const reasoning = prompt('Enter resolution reasoning:');
+            const amount = prompt('Enter compensation amount (ETH):');
+            
+            if (!reasoning) return;
+
+            try {
+                const response = await apiCall(`/admin/disputes/${disputeId}/resolve`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        winner,
+                        reasoning,
+                        amount: parseFloat(amount) || 0,
+                        adminKey,
+                        txHash: `0x${Date.now()}` // Mock tx hash
+                    })
+                });
+
+                showMessage('Dispute resolved successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+                
+                // Reload disputes
+                document.getElementById('loadDisputes').click();
+            } catch (error) {
+                showMessage(`Dispute resolution failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Close modal
+        document.getElementById('closeModal').addEventListener('click', () => {
+            document.getElementById('projectModal').classList.add('hidden');
+        });
+
+        // Close modal on background click
+        document.getElementById('projectModal').addEventListener('click', (e) => {
+            if (e.target.id === 'projectModal') {
+                document.getElementById('projectModal').classList.add('hidden');
+            }
+        });
+
+        // Search and filter event listeners
+        document.getElementById('loadProjects').addEventListener('click', loadProjects);
+        document.getElementById('searchProjects').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadProjects();
+        });
+        document.getElementById('filterStatus').addEventListener('change', loadProjects);
+
+        // Auto-load projects on page load
+        loadProjects();
+
+        // Additional utility functions for demonstration
+        
+        // Create milestone (for demo purposes)
+        async function createMilestones(projectId) {
+            if (!currentWallet) {
+                showMessage('Please connect your wallet first', 'error');
+                return;
+            }
+
+            const milestones = [
+                {
+                    title: "Initial Development",
+                    description: "Set up project structure and basic functionality",
+                    amount: 0.5,
+                    deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                },
+                {
+                    title: "Complete Implementation",
+                    description: "Finish all features and testing",
+                    amount: 1.0,
+                    deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                }
+            ];
+
+            try {
+                const response = await apiCall(`/projects/${projectId}/milestones`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        milestones,
+                        txHash: `0x${Date.now()}`
+                    })
+                });
+
+                showMessage('Milestones created successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+            } catch (error) {
+                showMessage(`Milestone creation failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Submit milestone work
+        async function submitMilestone(milestoneId) {
+            const notes = prompt('Enter delivery notes:');
+            const deliveryHash = `QmDelivery${Date.now()}`;
+
+            try {
+                const response = await apiCall(`/milestones/${milestoneId}/submit`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        deliveryHash,
+                        notes,
+                        files: []
+                    })
+                });
+
+                showMessage('Milestone work submitted successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+            } catch (error) {
+                showMessage(`Milestone submission failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Release payment
+        async function releasePayment(milestoneId) {
+            if (!confirm('Are you sure you want to release payment for this milestone?')) {
+                return;
+            }
+
+            try {
+                const response = await apiCall(`/milestones/${milestoneId}/release`, {
+                    method: 'POST'
+                });
+
+                showMessage('Payment released successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+            } catch (error) {
+                showMessage(`Payment release failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Dispute milestone
+        async function disputeMilestone(milestoneId) {
+            const reason = prompt('Enter dispute reason:');
+            const category = prompt('Enter dispute category (quality/deadline/scope/other):') || 'other';
+
+            if (!reason) return;
+
+            try {
+                const response = await apiCall(`/milestones/${milestoneId}/dispute`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        reason,
+                        category,
+                        evidence: []
+                    })
+                });
+
+                showMessage('Dispute raised successfully!', 'success');
+                console.log('Contract call needed:', response.data.contractCall);
+            } catch (error) {
+                showMessage(`Dispute creation failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Demo data functions (for presentation)
+        function loadDemoData() {
+            // Sample wallet addresses for demo
+            const demoWallets = [
+                '0x1234567890123456789012345678901234567890',
+                '0x0987654321098765432109876543210987654321',
+                '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
+            ];
+
+            showMessage('Demo mode: You can use these sample wallet addresses for testing', 'info');
+            console.log('Demo wallet addresses:', demoWallets);
+        }
+
+        // Add some demo functionality
+        window.addEventListener('load', () => {
+            // Add demo button to navigation
+            const nav = document.querySelector('nav .flex.items-center.space-x-4');
+            const demoBtn = document.createElement('button');
+            demoBtn.textContent = 'Demo Mode';
+            demoBtn.className = 'bg-purple-600 text-white px-4 py-2 rounded-md text-sm hover:bg-purple-700';
+            demoBtn.onclick = loadDemoData;
+            nav.appendChild(demoBtn);
+
+            // Show initial instructions
+            showMessage('Welcome! Connect a wallet to start using the platform. Click "Demo Mode" for sample addresses.', 'info');
+        });
+
+        // Global error handler
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled promise rejection:', event.reason);
+            showMessage('An unexpected error occurred. Check console for details.', 'error');
+        });
+
+        // Additional helper functions for better UX
+        function toggleLoading(elementId, isLoading) {
+            const element = document.getElementById(elementId);
+            if (isLoading) {
+                element.classList.add('loading');
+            } else {
+                element.classList.remove('loading');
+            }
+        }
+
+        function validateForm(formElement) {
+            const requiredFields = formElement.querySelectorAll('[required]');
+            for (let field of requiredFields) {
+                if (!field.value.trim()) {
+                    showMessage(`${field.name} is required`, 'error');
+                    field.focus();
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Enhanced project view with actions
+        function enhancedProjectView(project) {
+            const isOwner = currentWallet && project.client.address.toLowerCase() === currentWallet.toLowerCase();
+            const isFreelancer = currentWallet && project.freelancer && project.freelancer.address.toLowerCase() === currentWallet.toLowerCase();
+
+            return `
+                <div class="space-y-4">
+                    <!-- Project Actions -->
+                    ${isOwner ? `
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <h5 class="font-medium mb-2">Project Owner Actions</h5>
+                            <div class="space-x-2">
+                                ${project.status === 'open' ? `
+                                    <button onclick="createMilestones('${project._id || project.projectId}')" 
+                                            class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                        Create Milestones
+                                    </button>
+                                ` : ''}
+                                <button onclick="loadProjectApplications('${project._id || project.projectId}')" 
+                                        class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                                    View Applications
+                                </button>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${isFreelancer ? `
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <h5 class="font-medium mb-2">Freelancer Actions</h5>
+                            <div class="space-x-2">
+                                <button onclick="loadFreelancerMilestones('${project._id || project.projectId}')" 
+                                        class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+                                    View My Milestones
+                                </button>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        // Advanced search functionality
+        function initAdvancedSearch() {
+            const searchForm = document.createElement('form');
+            searchForm.innerHTML = `
+                <div class="bg-white p-4 rounded-lg shadow-sm mb-4">
+                    <h3 class="font-medium mb-3">Advanced Search</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input type="text" placeholder="Keywords" id="advSearchQuery" class="px-3 py-2 border rounded-md">
+                        <input type="number" placeholder="Min Budget" id="advSearchMinBudget" class="px-3 py-2 border rounded-md">
+                        <input type="number" placeholder="Max Budget" id="advSearchMaxBudget" class="px-3 py-2 border rounded-md">
+                        <button type="button" onclick="performAdvancedSearch()" class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">
+                            Advanced Search
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('projects-tab').insertBefore(searchForm, document.getElementById('projectsList'));
+        }
+
+        async function performAdvancedSearch() {
+            const query = document.getElementById('advSearchQuery').value;
+            const minBudget = document.getElementById('advSearchMinBudget').value;
+            const maxBudget = document.getElementById('advSearchMaxBudget').value;
+
+            const searchData = {
+                query: query || undefined,
+                filters: {
+                    budget: {
+                        min: minBudget ? parseFloat(minBudget) : undefined,
+                        max: maxBudget ? parseFloat(maxBudget) : undefined
+                    }
+                }
+            };
+
+            try {
+                const response = await apiCall('/projects/search', {
+                    method: 'POST',
+                    body: JSON.stringify(searchData)
+                });
+
+                displayProjects(response.data);
+                showMessage(`Found ${response.pagination.totalItems} projects`, 'success');
+            } catch (error) {
+                showMessage(`Advanced search failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize advanced search on page load
+        setTimeout(initAdvancedSearch, 1000);
+
+        // Utility function to format contract calls for display
+        function displayContractCall(contractCall) {
+            if (!contractCall) return;
+
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg max-w-2xl w-full mx-4 p-6">
+                    <h3 class="text-lg font-bold mb-4">Blockchain Transaction Required</h3>
+                    <div class="bg-gray-50 p-4 rounded-lg font-mono text-sm">
+                        <p><strong>Contract:</strong> ${contractCall.contract}</p>
+                        <p><strong>Method:</strong> ${contractCall.method}</p>
+                        <p><strong>Address:</strong> ${contractCall.address}</p>
+                        <p><strong>Parameters:</strong></p>
+                        <pre class="mt-2 whitespace-pre-wrap">${JSON.stringify(contractCall.params, null, 2)}</pre>
+                    </div>
+                    <div class="mt-4 text-sm text-gray-600">
+                        <p>This transaction needs to be executed on the blockchain to complete the operation.</p>
+                    </div>
+                    <button onclick="this.closest('.fixed').remove()" 
+                            class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                        Close
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Enhanced error handling with retry mechanism
+        async function apiCallWithRetry(endpoint, options = {}, maxRetries = 3) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await apiCall(endpoint, options);
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    
+                    showMessage(`Request failed, retrying... (${i + 1}/${maxRetries})`, 'info');
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                }
+            }
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case '1':
+                        e.preventDefault();
+                        document.querySelector('[data-tab="projects"]').click();
+                        break;
+                    case '2':
+                        e.preventDefault();
+                        document.querySelector('[data-tab="create-project"]').click();
+                        break;
+                    case '3':
+                        e.preventDefault();
+                        document.querySelector('[data-tab="dashboard"]').click();
+                        break;
+                }
+            }
+        });
+
+        // Auto-refresh functionality
+        let autoRefreshInterval;
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(() => {
+                if (document.querySelector('[data-tab="projects"]').classList.contains('tab-active')) {
+                    loadProjects();
+                }
+            }, 30000); // Refresh every 30 seconds
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        // Start auto-refresh
+        startAutoRefresh();
+
+        // API endpoint for testing - Health check
+        async function testConnection() {
+            try {
+                const response = await apiCall('/health');
+                showMessage('Backend connection successful!', 'success');
+                console.log('Health check:', response.data);
+            } catch (error) {
+                showMessage(`Backend connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Test connection on load
+        setTimeout(testConnection, 2000);
+    </script>
+</body>
+</html>
