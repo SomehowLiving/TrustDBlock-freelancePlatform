@@ -905,7 +905,7 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
     await project.save();
 
     // Prepare blockchain data
-    const amounts = milestones.map(m => parseEther(m.amount));
+    const amounts = milestones.map(m => parseEther(m.amount).toString());
     const deadlines = milestones.map(m => Math.floor(new Date(m.deadline).getTime() / 1000));
     const metadataHashes = milestones.map((m, i) => `QmMilestone${i}`);
 
@@ -1954,6 +1954,22 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
     if (dispute.resolution.status !== 'open') {
       return res.status(400).json({ success: false, error: 'Dispute is not open for resolution' });
     }
+    const milestone = await Milestone.findOne({
+      $or: [{ onChainId: dispute.milestoneId }, { milestoneId: dispute.milestoneId }]
+    });
+    if (!milestone) {
+      return res.status(404).json({ success: false, error: 'Related Milestone not found' });
+    }
+
+    const project = await Project.findOne({ 
+      $or: [{ onChainId: dispute.projectId }, { projectId: dispute.projectId }]
+    });
+
+    if (!project) {
+      return res.status(404).json({ success: false, error: 'Related project not found' });
+    }    
+    // Calculate resolved amount
+    const resolvedAmount = amount || milestone.details.amount || 0;
 
     if (!validateAddress(winner)) {
       return res.status(400).json({ success: false, error: 'Invalid winner address' });
@@ -1963,7 +1979,7 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
     dispute.resolution.status = 'resolved';
     dispute.resolution.winner = winner.toLowerCase();
     dispute.resolution.reasoning = reasoning || '';
-    dispute.resolution.amount = amount || 0;
+    dispute.resolution.amount = resolvedAmount || 0;
     dispute.resolution.resolvedBy = 'admin';
     dispute.resolution.resolvedAt = new Date();
     dispute.resolution.compensation = compensation || {};
@@ -1971,22 +1987,13 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
     await dispute.save();
 
     // Update milestone
-    const milestone = await Milestone.findOne({
-      $or: [{ onChainId: dispute.milestoneId }, { milestoneId: dispute.milestoneId }]
-    });
-
-    if (milestone) {
-      milestone.status =
-        winner.toLowerCase() === milestone.freelancer.toLowerCase() ? 'paid' : 'refunded';
+      milestone.status =winner.toLowerCase() === milestone.freelancer.toLowerCase() ? 'paid' : 'refunded';
       milestone.dispute.resolved = true;
       milestone.dispute.resolvedAt = new Date();
       milestone.dispute.winner = winner.toLowerCase();
       await milestone.save();
-    }
-
+  
     // Update project
-    const project = await Project.findOne({ projectId: dispute.projectId });
-    if (project) {
       const activeDisputes = await Dispute.countDocuments({
         projectId: dispute.projectId,
         'resolution.status': { $ne: 'resolved' }
@@ -1996,11 +2003,8 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
         project.flags.isDisputed = false;
         await project.save();
       }
-    }
 
     // Record transaction
-    const resolvedAmount = amount || milestone?.details?.amount?.toString() || '0';
-
     const transaction = new Transaction({
       txHash: txHash || `0x${Date.now()}`,
       type: 'dispute_resolved',
@@ -2016,7 +2020,7 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
         freelancer: milestone?.freelancer
       },
       amounts: {
-        amount: resolvedAmount,
+        amount: resolvedAmount.toSring(),
         value: parseFloat(resolvedAmount)
       },
       status: 'confirmed'
@@ -2037,7 +2041,7 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
         params: [
           milestone?.onChainId || dispute.milestoneId,
           winner,
-          parseEther(resolvedAmount)
+          parseEther(resolvedAmount.toSring()).toString()
         ],
         address: CONTRACTS.freelancePlatform.address
       }
@@ -2046,7 +2050,6 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
     handleError(error, res, 'Dispute resolution failed');
   }
 });
-
 
 // Get all disputes (admin only)
 router.get('/admin/disputes', async (req, res) => {
