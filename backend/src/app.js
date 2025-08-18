@@ -9,13 +9,13 @@ const morgan = require('morgan');
 require('dotenv').config();
 
 // Import routes and middleware
-const hybridRoutes = require('./routes/hybrid');
+const hybridRoutes = require('./HybridRoutes');
 const { createBlockchainSyncMiddleware } = require('./middleware/blockchainSync');
 const { ethers } = require('ethers');
 
 // Import contract ABIs
-const freelancePlatform = require('./abis/FreelancePlatform.json');
-const userRegistry = require('./abis/UserRegistry.json');
+const freelancePlatform = require('../abis/FreelancePlatform.json');
+const userRegistry = require('../abis/UserRegistry.json');
 
 class HybridFreelancePlatform {
   constructor() {
@@ -31,19 +31,14 @@ class HybridFreelancePlatform {
 
       // Setup middleware
       await this.setupMiddleware();
-
       // Connect to MongoDB
       await this.connectDatabase();
-
       // Setup blockchain sync
       await this.setupBlockchainSync();
-
       // Setup routes
       this.setupRoutes();
-
       // Setup error handling
       this.setupErrorHandling();
-
       // Setup graceful shutdown
       this.setupGracefulShutdown();
 
@@ -59,7 +54,6 @@ class HybridFreelancePlatform {
   // Setup Express middleware
   async setupMiddleware() {
     console.log('📦 Setting up middleware...');
-
     // Security middleware
     this.app.use(helmet({
       contentSecurityPolicy: {
@@ -71,13 +65,23 @@ class HybridFreelancePlatform {
         },
       },
     }));
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : [
+          'http://localhost:3000',
+          'http://127.0.0.1:3000',
+          'http://localhost:8080',
+          'http://192.168.253.1:8080'
+        ];
 
-    // CORS configuration
-    this.app.use(cors({
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
-      credentials: true,
-      optionsSuccessStatus: 200
-    }));
+    this.app.use(
+      cors({
+        origin: allowedOrigins,
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-wallet-address'],
+      })
+    );
 
     // Rate limiting
     const limiter = rateLimit({
@@ -145,8 +149,8 @@ class HybridFreelancePlatform {
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
-        bufferCommands: false,
-        bufferMaxEntries: 0
+        // bufferCommands: false,
+        // bufferMaxEntries: 0
       });
 
       // MongoDB connection event listeners

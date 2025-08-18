@@ -1,6 +1,21 @@
 // middleware/blockchainSync.js
 const { ethers } = require('ethers');
 const { User, Project, Application, Milestone, Transaction, Dispute } = require('../models');
+// Import contract ABIs
+const freelancePlatform = require('../../abis/FreelancePlatform.json');
+const userRegistry = require('../../abis/UserRegistry.json');
+
+// Contract configurations
+const CONTRACTS = {
+  freelancePlatform: {
+    address: process.env.FREELANCE_PLATFORM_ADDRESS || "0x1111111111111111111111111111111111111111",
+    abi: freelancePlatform || []
+  },
+  userRegistry: {
+    address: process.env.USER_REGISTRY_ADDRESS || "0x2222222222222222222222222222222222222222",
+    abi: userRegistry || []
+  }
+};
 
 class BlockchainSyncManager {
   constructor(contracts, provider) {
@@ -9,13 +24,14 @@ class BlockchainSyncManager {
     this.isListening = false;
     this.eventHandlers = new Map();
   }
-
   // Initialize event listeners
   async startEventListening() {
     if (this.isListening) return;
 
     console.log('Starting blockchain event listeners...');
 
+    // --- FreelancePlatform ---
+    
     // Listen to FreelancePlatform events
     const freelanceContract = new ethers.Contract(
       this.contracts.freelancePlatform.address,

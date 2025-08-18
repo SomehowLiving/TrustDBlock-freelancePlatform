@@ -2,10 +2,10 @@
   "name": "freelance-platform-api",
   "version": "1.1.0",
   "description": "Hybrid on-chain/off-chain freelance platform backend with MongoDB and Ethereum integration",
-  "main": "app.js",
+  "main": "server.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js",
+    "dev": "nodemon server.js",
     "dev:watch": "nodemon --watch './**/*.js' --ignore './node_modules/**' app.js",
     "test": "jest --detectOpenHandles",
     "test:watch": "jest --watch --detectOpenHandles",
