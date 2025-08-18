@@ -19,132 +19,160 @@ const CONTRACTS = {
 
 class BlockchainSyncManager {
   constructor(contracts, provider) {
-    this.contracts = contracts;
-    this.provider = provider;
-    this.isListening = false;
-    this.eventHandlers = new Map();
-  }
+  this.contracts = contracts;
+  this.provider = provider;
+  this.isListening = false;
+  this.eventHandlers = new Map();
+
+  // Safe binding - only bind methods that actually exist
+  const methodsToBind = [
+    'handleUserRegistered',
+    'handleProjectCreated', 
+    'handleFundsDeposited',
+    'handleFreelancerSelected',
+    'handleFreelancerAcceptedProject',
+    'handleApplicationSubmitted',
+    'handleMilestonesAgreed',
+    'handleProjectActivated',
+    'handleMilestoneSubmitted',
+    'handleMilestoneFinalSubmitted', 
+    'handleMilestoneApproved',
+    'handlePaymentReleased',
+    'handleMilestoneExtensionRequested',
+    'handleMilestoneExtensionApproved',
+    'handleMilestoneFinalized',
+    'handleMilestoneCanceled',
+    'handleMilestoneAutoCancelled',
+    'handleDisputeRaised',
+    'handleDisputeResolved',
+    'handleProjectCompleted',
+    'handleFreelancersShortlisted',
+    'handleReputationUpdated',
+    'handleProjectRated',
+    'handleUserRoleUpdated',
+    'handleUserDeactivated',
+    'handleUserReactivated'
+  ];
+
+  // Bind only existing methods
+  methodsToBind.forEach(methodName => {
+    if (typeof this[methodName] === 'function') {
+      this[methodName] = this[methodName].bind(this);
+      console.log(`✅ Bound method: ${methodName}`);
+    } else {
+      console.warn(`⚠️ Method ${methodName} does not exist, skipping binding`);
+    }
+  });
+}
   // Initialize event listeners
   async startEventListening() {
     if (this.isListening) return;
+    try {
+      console.log('Starting blockchain event listeners...');
+      // Validate provider
+      if (!this.provider) {
+        throw new Error('Provider not initialized');
+      }
+      // Validate contract configurations
+      if (!this.contracts.freelancePlatform.abi || this.contracts.freelancePlatform.abi.length === 0) {
+        console.warn('FreelancePlatform ABI not loaded, skipping contract initialization');
+        return;
+      }
+      // --- FreelancePlatform Contract ---
+      const freelanceContract = new ethers.Contract(
+        this.contracts.freelancePlatform.address,
+        this.contracts.freelancePlatform.abi,
+        this.provider
+      );
+      // Project Lifecycle Events
+      freelanceContract.on('ProjectCreated', this.handleProjectCreated);
+      freelanceContract.on('FundsDeposited', this.handleFundsDeposited);
+      freelanceContract.on('ApplicationSubmitted', this.handleApplicationSubmitted);
+      freelanceContract.on('FreelancersShortlisted', this.handleFreelancersShortlisted);
+      freelanceContract.on('FreelancerSelected', this.handleFreelancerSelected);
+      freelanceContract.on('FreelancerAcceptedProject', this.handleFreelancerAcceptedProject);
+      freelanceContract.on('MilestonesAgreed', this.handleMilestonesAgreed);
+      freelanceContract.on('ProjectActivated', this.handleProjectActivated);
+      freelanceContract.on('ProjectCompleted', this.handleProjectCompleted);
 
-    console.log('Starting blockchain event listeners...');
+      // Milestone Events
+      freelanceContract.on('MilestoneSubmitted', this.handleMilestoneSubmitted);
+      freelanceContract.on('MilestoneFinalSubmitted', this.handleMilestoneFinalSubmitted);
+      freelanceContract.on('MilestoneApproved', this.handleMilestoneApproved);
+      freelanceContract.on('PaymentReleased', this.handlePaymentReleased);
+      freelanceContract.on('MilestoneExtensionRequested', this.handleMilestoneExtensionRequested);
+      freelanceContract.on('MilestoneExtensionApproved', this.handleMilestoneExtensionApproved);
+      freelanceContract.on('MilestoneFinalized', this.handleMilestoneFinalized);
+      freelanceContract.on('MilestoneCanceled', this.handleMilestoneCanceled);
+      freelanceContract.on('MilestoneAutoCancelled', this.handleMilestoneAutoCancelled);
 
-    // --- FreelancePlatform ---
-    
-    // Listen to FreelancePlatform events
-    const freelanceContract = new ethers.Contract(
-      this.contracts.freelancePlatform.address,
-      this.contracts.freelancePlatform.abi,
-      this.provider
-    );
+      // Dispute Events
+      freelanceContract.on('DisputeRaised', this.handleDisputeRaised);
+      freelanceContract.on('DisputeResolved', this.handleDisputeResolved);
 
-    // Listen to UserRegistry events
-    const userContract = new ethers.Contract(
-      this.contracts.userRegistry.address,
-      this.contracts.userRegistry.abi,
-      this.provider
-    );
+      // Reputation Events
+      freelanceContract.on('ReputationUpdated', this.handleReputationUpdated);
+      freelanceContract.on('ProjectRated', this.handleProjectRated);
 
-    // Project Events
-    freelanceContract.on('ProjectCreated', this.handleProjectCreated.bind(this));
-    freelanceContract.on('FundsDeposited', this.handleFundsDeposited.bind(this));
-    freelanceContract.on('FreelancerSelected', this.handleFreelancerSelected.bind(this));
-    freelanceContract.on('ProjectAccepted', this.handleProjectAccepted.bind(this));
-    freelanceContract.on('MilestonesAgreed', this.handleMilestonesAgreed.bind(this));
+      if (!this.contracts.userRegistry.abi || this.contracts.userRegistry.abi.length === 0) {
+        console.warn('UserRegistry ABI not loaded, skipping user event initialization');
+      } else {
+        // --- UserRegistry Contract ---
+        const userContract = new ethers.Contract(
+          this.contracts.userRegistry.address,
+          this.contracts.userRegistry.abi,
+          this.provider
+        );
 
-    // Milestone Events
-    freelanceContract.on('MilestoneSubmitted', this.handleMilestoneSubmitted.bind(this));
-    freelanceContract.on('MilestoneApproved', this.handleMilestoneApproved.bind(this));
-    freelanceContract.on('PaymentReleased', this.handlePaymentReleased.bind(this));
-    freelanceContract.on('DisputeRaised', this.handleDisputeRaised.bind(this));
-    freelanceContract.on('DisputeResolved', this.handleDisputeResolved.bind(this));
+        // User Events - bind with correct parameters
+        userContract.on('UserRegistered', this.handleUserRegistered);
+        userContract.on('UserRoleUpdated', this.handleUserRoleUpdated);
+        userContract.on('UserDeactivated', this.handleUserDeactivated);
+        userContract.on('UserReactivated', this.handleUserReactivated);
 
-    // User Events
-    userContract.on('UserRegistered', this.handleUserRegistered.bind(this));
+        console.log('UserRegistry event listeners initialized');
+      }
 
-    this.isListening = true;
-    console.log('Blockchain event listeners started successfully');
+      this.isListening = true;
+      console.log('Blockchain event listeners started successfully');
+    } catch (error) {
+      console.error('Error starting blockchain event listeners:', error);
+      throw error;
+    }
   }
 
   // Stop event listeners
   stopEventListening() {
     if (!this.isListening) return;
-
-    // Remove all listeners
-    this.provider.removeAllListeners();
-    this.isListening = false;
-    console.log('Blockchain event listeners stopped');
-  }
-
-  // ==================== EVENT HANDLERS ====================
-
-  async handleUserRegistered(userAddress, role, metadataHash, event) {
     try {
-      console.log(`User registered: ${userAddress}, Role: ${role}`);
-
-      // Update or create user in MongoDB
-      const user = await User.findOneAndUpdate(
-        { address: userAddress.toLowerCase() },
-        {
-          address: userAddress.toLowerCase(),
-          isActive: true,
-          'blockchain.status': 'confirmed',
-          'blockchain.txHash': event.transactionHash,
-          'blockchain.blockNumber': event.blockNumber
-        },
-        { 
-          new: true, 
-          upsert: false // Don't create if doesn't exist
-        }
-      );
-
-      if (user) {
-        console.log(`User ${userAddress} registration confirmed in database`);
-      }
-
-      // Record transaction
-      await this.recordTransaction({
-        txHash: event.transactionHash,
-        type: 'user_registered',
-        entities: {
-          from: userAddress.toLowerCase(),
-          userAddress: userAddress.toLowerCase()
-        },
-        amounts: {
-          amount: '0',
-          fee: '0'
-        },
-        eventData: {
-          role,
-          metadataHash
-        },
-        blockNumber: event.blockNumber
-      });
-
+      // Remove all listeners
+      this.provider.removeAllListeners();
+      this.isListening = false;
+      console.log('Blockchain event listeners stopped');
     } catch (error) {
-      console.error('Error handling UserRegistered event:', error);
+      console.error('Error stopping event listeners:', error);
     }
   }
 
+  // ==================== EVENT HANDLERS ====================
+  //========================== PROJECT ===========================
   async handleProjectCreated(projectId, client, totalBudget, metadataHash, event) {
     try {
       console.log(`Project created: ID ${projectId}, Client: ${client}`);
-
       // Find existing project in MongoDB and update with blockchain data
       const project = await Project.findOneAndUpdate(
         { 'client.address': client.toLowerCase() },
         {
           onChainId: parseInt(projectId),
           projectId: parseInt(projectId),
-          status: 'open',
+          status: 'draft', // open-> draft?
           'budget.totalBudget': parseFloat(ethers.formatEther(totalBudget)),
           'blockchain.status': 'confirmed',
           'blockchain.txHash': event.transactionHash,
           'blockchain.blockNumber': event.blockNumber,
           'metadata.ipfsHash': metadataHash
         },
-        { 
+        {
           new: true,
           sort: { createdAt: -1 } // Get the most recent project
         }
@@ -167,7 +195,7 @@ class BlockchainSyncManager {
             total: parseFloat(ethers.formatEther(totalBudget)),
             totalBudget: parseFloat(ethers.formatEther(totalBudget))
           },
-          status: 'open',
+          status: 'draft', //draft
           category: 'Other',
           timeline: {
             deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
@@ -212,14 +240,14 @@ class BlockchainSyncManager {
       console.log(`Funds deposited: Project ${projectId}, Amount: ${ethers.formatEther(amount)}`);
 
       const project = await Project.findOneAndUpdate(
-        { 
+        {
           $or: [
             { onChainId: parseInt(projectId) },
             { projectId: parseInt(projectId) }
           ]
         },
         {
-          status: 'funded',
+          status: 'open', //funded->open?
           'budget.escrowBalance': parseFloat(ethers.formatEther(amount)),
           'blockchain.depositTxHash': event.transactionHash
         },
@@ -250,12 +278,137 @@ class BlockchainSyncManager {
     }
   }
 
+  async handleApplicationSubmitted(projectId, freelancer, proposalHash, event) {
+    try {
+      console.log(`Application submitted: Project ${projectId}, Freelancer: ${freelancer}`);
+      //Update or create Applicatiom
+      await Application.findOneAndUpdate(
+        {
+          projectId: parseInt(projectId),
+          'freelancer.wallet': freelancer.toLowerCase()
+        },
+        {
+          projectId: parseInt(projectId),
+          'freelancer.wallet': freelancer.toLowerCase(),
+          status: 'submitted',
+          'proposal.hash': proposalHash,
+          'timestamps.submittedAt': new Date(),
+          'blockchain.txHash': event.transactionHash
+        },
+        {
+          new: true,
+          upsert: true // Create if doesn't exist
+        }
+      );
+      await this.recordTransaction(
+        {
+          txHash: event.transactionHash,
+          type: 'application_submitted',
+          entities: {
+            projectId: parseInt(projectId),
+            freelancer: freelancer.toLowerCase(),
+            from: freelancer.toLowerCase()
+          },
+          amounts: {
+            amount: '0',
+            fee: '0'
+          },
+          eventData: {
+            proposalHash
+          },
+          blockNumber: event.blockNumber
+        }
+      );
+    } catch (error) {
+      console.error('Error handling ApplicationSubmitted event:', error);
+    }
+  }
+  async handleFreelancersShortlisted(projectId, freelancers, event) {
+  try {
+    console.log(`Freelancers shortlisted: Project ${projectId}, Count: ${freelancers.length}`);
+    
+    // Update project with shortlisted freelancers
+    const project = await Project.findOneAndUpdate(
+      {
+        $or: [
+          { onChainId: parseInt(projectId) },
+          { projectId: parseInt(projectId) }
+        ]
+      },
+      {
+        status: 'selecting',
+        'timeline.shortlistingDate': new Date()
+      },
+      { new: true }
+    );
+
+    if (!project) {
+      console.warn(`Project ${projectId} not found for shortlisting`);
+      return;
+    }
+
+    // Update application status for shortlisted freelancers
+    await Application.updateMany(
+      {
+        projectId: parseInt(projectId),
+        'freelancer.wallet': { $in: freelancers.map(addr => addr.toLowerCase()) }
+      },
+      {
+        status: 'shortlisted',
+        'timestamps.shortlistedAt': new Date()
+      }
+    );
+
+    // Update non-shortlisted applications to 'reviewed' status
+    await Application.updateMany(
+      {
+        projectId: parseInt(projectId),
+        'freelancer.wallet': { $nin: freelancers.map(addr => addr.toLowerCase()) },
+        status: 'submitted'
+      },
+      {
+        status: 'reviewed'
+      }
+    );
+
+    // Record transaction
+    await this.recordTransaction({
+      txHash: event.transactionHash,
+      type: 'freelancers_shortlisted',
+      entities: {
+        projectId: parseInt(projectId),
+        freelancers: freelancers.map(addr => addr.toLowerCase()),
+        client: project.client?.address || ''
+      },
+      amounts: {
+        amount: '0',
+        fee: '0'
+      },
+      eventData: {
+        freelancerCount: freelancers.length,
+        shortlistedAddresses: freelancers.map(addr => addr.toLowerCase())
+      },
+      blockNumber: event.blockNumber
+    });
+
+    console.log(`Successfully processed shortlisting for project ${projectId}`);
+
+  } catch (error) {
+    console.error('Error handling FreelancersShortlisted event:', error);
+    console.error('Event details:', {
+      projectId,
+      freelancers,
+      txHash: event.transactionHash,
+      blockNumber: event.blockNumber
+    });
+  }
+  }
   async handleFreelancerSelected(projectId, freelancer, event) {
     try {
       console.log(`Freelancer selected: Project ${projectId}, Freelancer: ${freelancer}`);
 
       const project = await Project.findOneAndUpdate(
-        { 
+        {
           $or: [
             { onChainId: parseInt(projectId) },
             { projectId: parseInt(projectId) }
@@ -268,8 +421,7 @@ class BlockchainSyncManager {
         },
         { new: true }
       );
-
-      // Update application status
+      // Update selected application status
       await Application.findOneAndUpdate(
         {
           projectId: parseInt(projectId),
@@ -280,7 +432,6 @@ class BlockchainSyncManager {
           'timestamps.selectedAt': new Date()
         }
       );
-
       // Update other applications to rejected
       await Application.updateMany(
         {
@@ -313,9 +464,133 @@ class BlockchainSyncManager {
     }
   }
 
-  async handleMilestoneSubmitted(milestoneId, freelancer, deliveryHash, event) {
+  async handleFreelancerAcceptedProject(projectId, freelancer, event) {
     try {
-      console.log(`Milestone submitted: ID ${milestoneId}, Freelancer: ${freelancer}`);
+      console.log(`Freelancer accepted project: Project ${projectId}, Freelancer: ${freelancer}`);
+      await Project.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(projectId) },
+            { projectId: parseInt(projectId) }
+          ]
+        },
+        {
+          'freelancer.acceptedAt': new Date(),
+          'timelinne.acceptedAt': new Date()
+        },
+        { new: true }
+      );
+      // Update application status
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'project_accepted',
+        entities: {
+          projectId: parseInt(projectId),
+          freelancer: freelancer.toLowerCase(),
+          from: freelancer.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
+    } catch (error) {
+      console.error('Error handling FreelancerAcceptedProject event:', error);
+    }
+  }
+  async handleMilestonesAgreed(projectId, milestoneIds, event) {
+    try {
+      console.log(`Milestones agreed: Project ${projectId}, Count: ${milestones.length}`);
+
+      const project = await Project.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(projectId) },
+            { projectId: parseInt(projectId) }
+          ]
+        },
+        {
+          // status: 'active',
+          'milestones.agreed': milestones,
+          'milestones.total': milestones.length,
+          'milestones.totalMilestones': milestones.length
+        },
+        { new: true }
+      );
+      // Create milestone records for each aggreed milestone
+      for (const milestoneId of milestoneIds) {
+        await Milestone.findOneAndUpdate(
+          { oneChainId: parseInt(milestoneId) },
+          {
+            onChainId: parseInt(milestoneId),
+            milestoneId: parseInt(milestoneId),
+            projectId: parseInt(projectId),
+            status: 'pending',
+            'blockchain.status': 'confirmed',
+            'blockchain.txHash': event.transactionHash,
+            'timeline.createdAt': new date()
+          },
+          { new: true, upsert: true }
+        );
+      }
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'milestones_agreed',
+        entities: {
+          projectId: parseInt(projectId),
+          milestoneIds: milestoneIds.map(id => parseInt(id))
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          milestoneCount: milestoneIds.length
+        },
+        blockNumber: event.blockNumber
+      });
+    } catch (error) {
+      console.error('Error handling MilestonesAgreed event:', error);
+    }
+  }
+
+  async handleProjectActivated(projectId, event) {
+    try {
+      console.log(`Project activated: project ${projectId}`);
+      await Project.fineOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(projectId) },
+            { projectId: parseInt(projectId) }
+          ]
+        },
+        {
+          status: 'in_progress',
+          'timeline.startDate': new Date()
+        },
+        { new: true }
+      );
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'project_activated',
+        entities: {
+          projectId: parseInt(projectId)
+        },
+        amounts: {
+          amount: 0,
+          fee: 0
+        },
+        blockNumber: event.blockNumber
+      });
+    }
+    catch (error) {
+      console.error('Error Handling ProjectActivated event:', error);
+    }
+  }
+  async handleMilestoneSubmitted(milestoneId, projectId, amount, freelancer, deliveryHash, event) {
+    try {
+      console.log(`Milestone submitted: ID ${milestoneId},Project ${projectId}, Freelancer: ${freelancer}, Amount: ${ethers.formatEther(amount)}`);
 
       const milestone = await Milestone.findOneAndUpdate(
         {
@@ -329,7 +604,7 @@ class BlockchainSyncManager {
           'submission.deliveryHash': deliveryHash,
           'submission.submittedAt': new Date(),
           'timeline.submittedAt': new Date(),
-          'blockchain.txHash': event.transactionHash
+          'blockchain.submitTxHash': event.transactionHash
         },
         { new: true }
       );
@@ -362,9 +637,51 @@ class BlockchainSyncManager {
     }
   }
 
-  async handleMilestoneApproved(milestoneId, client, event) {
+  async handleMilestoneFinalSubmitted(milestoneId, projectId, finalSubmitTime, freelancer, event) {
     try {
-      console.log(`Milestone approved: ID ${milestoneId}, Client: ${client}`);
+      console.log(`Milestone final submitted: ID ${milestoneId}, Project ${projectId}, Freelancer: ${freelancer}`);
+
+      await Milestone.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(milestoneId) },
+            { milestoneId: parseInt(milestoneId) }
+          ]
+        },
+        {
+          status: 'submitted',
+          'timeline.finalSubmittedAt': new Date(parseInt(finalSubmitTime) * 1000),
+          'blockchain.finalSubmitTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'milestone_final_submitted',
+        entities: {
+          milestoneId: parseInt(milestoneId),
+          projectId: parseInt(projectId),
+          freelancer: freelancer.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          finalSubmitTime: parseInt(finalSubmitTime)
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling MilestoneFinalSubmitted event:', error);
+    }
+  }
+
+  async handleMilestoneApproved(milestoneId, projectId, client, event) {
+    try {
+      console.log(`Milestone approved: ID ${milestoneId},  Project ${projectId}, Client: ${client}`);
 
       const milestone = await Milestone.findOneAndUpdate(
         {
@@ -489,12 +806,12 @@ class BlockchainSyncManager {
       console.error('Error handling PaymentReleased event:', error);
     }
   }
-
-  async handleDisputeRaised(milestoneId, raisedBy, event) {
+  //===============================MILESTONE EXTENSION=================================
+  async handleMilestoneExtensionRequested(milestoneId, projectId, event) {
     try {
-      console.log(`Dispute raised: Milestone ${milestoneId}, Raised by: ${raisedBy}`);
+      console.log(`Extension requested: Milestone ${milestoneId}, Project ${projectId}`);
 
-      const milestone = await Milestone.findOneAndUpdate(
+      await Milestone.findOneAndUpdate(
         {
           $or: [
             { onChainId: parseInt(milestoneId) },
@@ -502,32 +819,246 @@ class BlockchainSyncManager {
           ]
         },
         {
-          status: 'disputed',
-          'dispute.raised': true,
-          'dispute.raisedBy': raisedBy.toLowerCase(),
-          'dispute.raisedAt': new Date(),
-          'timeline.disputedAt': new Date(),
-          'blockchain.disputeTxHash': event.transactionHash
+          'extension.requested': true,
+          'extension.requestedAt': new Date()
         },
         { new: true }
       );
 
-      if (milestone) {
-        // Update project dispute status
-        await Project.findOneAndUpdate(
-          {
-            $or: [
-              { onChainId: milestone.projectId },
-              { projectId: milestone.projectId }
-            ]
-          },
-          {
-            'flags.isDisputed': true
-          }
-        );
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'extension_requested',
+        entities: {
+          milestoneId: parseInt(milestoneId),
+          projectId: parseInt(projectId)
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
 
-        console.log(`Dispute ${milestoneId} confirmed`);
-      }
+    } catch (error) {
+      console.error('Error handling MilestoneExtensionRequested event:', error);
+    }
+  }
+
+  async handleMilestoneExtensionApproved(milestoneId, projectId, newDeadline, event) {
+    try {
+      console.log(`Extension approved: Milestone ${milestoneId}, New deadline: ${new Date(parseInt(newDeadline) * 1000)}`);
+
+      await Milestone.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(milestoneId) },
+            { milestoneId: parseInt(milestoneId) }
+          ]
+        },
+        {
+          'extension.approved': true,
+          'extension.approvedAt': new Date(),
+          'timeline.deadline': new Date(parseInt(newDeadline) * 1000)
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'extension_approved',
+        entities: {
+          milestoneId: parseInt(milestoneId),
+          projectId: parseInt(projectId)
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          newDeadline: parseInt(newDeadline)
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling MilestoneExtensionApproved event:', error);
+    }
+  }
+
+  async handleMilestoneFinalized(milestoneId, projectId, freelancer, event) {
+    try {
+      console.log(`Milestone finalized: ID ${milestoneId}, Project ${projectId}`);
+
+      await Milestone.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(milestoneId) },
+            { milestoneId: parseInt(milestoneId) }
+          ]
+        },
+        {
+          'timeline.finalizedAt': new Date(),
+          'blockchain.finalizeTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'milestone_finalized',
+        entities: {
+          milestoneId: parseInt(milestoneId),
+          projectId: parseInt(projectId),
+          freelancer: freelancer.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling MilestoneFinalized event:', error);
+    }
+  }
+
+  async handleMilestoneCanceled(milestoneId, projectId, event) {
+    try {
+      console.log(`Milestone canceled: ID ${milestoneId}, Project ${projectId}`);
+
+      await Milestone.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(milestoneId) },
+            { milestoneId: parseInt(milestoneId) }
+          ]
+        },
+        {
+          status: 'cancelled',
+          'timeline.cancelledAt': new Date(),
+          'blockchain.cancelTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'milestone_cancelled',
+        entities: {
+          milestoneId: parseInt(milestoneId),
+          projectId: parseInt(projectId)
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling MilestoneCanceled event:', error);
+    }
+  }
+
+  async handleMilestoneAutoCancelled(milestoneId, projectId, event) {
+    try {
+      console.log(`Milestone auto-cancelled: ID ${milestoneId}, Project ${projectId}`);
+      await Milestone.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(milestoneId) },
+            { milestoneId: parseInt(milestoneId) }
+          ]
+        },
+        {
+          status: 'cancelled',
+          'flags.autoCancelled': true,
+          'timeline.cancelledAt': new Date(),
+          'blockchain.cancelTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+      // Update project milestone counts
+      const project = await Project.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(projectId) },
+            { projectId: parseInt(projectId) }
+          ]
+        },
+        {
+          $inc: { 'milestones.completed': 1 }
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'milestone_cancelled',
+        entities: {
+          milestoneId: parseInt(milestoneId),
+          projectId: parseInt(projectId)
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          autoCancelled: true
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling MilestoneAutoCancelled event:', error);
+    }
+  }
+
+  //===============================DISPUTE================================
+  async handleDisputeRaised(projectId, raisedBy, event) {
+    try {
+      console.log(`Dispute raised: Project ${projectId}, Raised by: ${raisedBy}`);
+
+      // Update project dispute status
+      const project = await Project.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(projectId) },
+            { projectId: parseInt(projectId) }
+          ]
+        },
+        {
+          status: 'disputed',
+          'flags.isDisputed': true
+        },
+        { new: true }
+      );
+      // Create dispute record
+      const disputeId = `${projectId}-${Date.now()}`;
+      await Dispute.create({
+        disputeId,
+        projectId: parseInt(projectId),
+        milestoneId: 0, // Will be updated if specific milestone dispute
+        parties: {
+          client: { wallet: project?.client?.address || '' },
+          freelancer: { wallet: project?.freelancer?.address || '' },
+          raisedBy: raisedBy.toLowerCase(),
+          againstAddress: raisedBy.toLowerCase() === project?.client?.address?.toLowerCase()
+            ? project?.freelancer?.address || ''
+            : project?.client?.address || ''
+        },
+        details: {
+          reason: 'Blockchain dispute raised',
+          category: 'other'
+        },
+        resolution: {
+          status: 'open'
+        },
+        timeline: {
+          raisedAt: new Date()
+        }
+      });
 
       await this.recordTransaction({
         txHash: event.transactionHash,
@@ -603,6 +1134,343 @@ class BlockchainSyncManager {
       console.error('Error handling DisputeResolved event:', error);
     }
   }
+  //====================================Project completed====================
+
+  async handleProjectCompleted(projectId, freelancer, event) {
+    try {
+      console.log(`Project completed: ID ${projectId}, Freelancer: ${freelancer}`);
+
+      const project = await Project.findOneAndUpdate(
+        {
+          $or: [
+            { onChainId: parseInt(projectId) },
+            { projectId: parseInt(projectId) }
+          ]
+        },
+        {
+          status: 'completed',
+          'flags.isCompleted': true,
+          'timeline.endDate': new Date()
+        },
+        { new: true }
+      );
+
+      // Update freelancer reputation
+      await User.findOneAndUpdate(
+        { address: freelancer.toLowerCase() },
+        {
+          $inc: {
+            'reputation.completedProjects': 1,
+            'reputation.totalProjects': 1
+          }
+        }
+      );
+
+      // Update client reputation
+      if (project?.client?.address) {
+        await User.findOneAndUpdate(
+          { address: project.client.address.toLowerCase() },
+          {
+            $inc: {
+              'reputation.totalProjects': 1
+            }
+          }
+        );
+      }
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'project_completed',
+        entities: {
+          projectId: parseInt(projectId),
+          freelancer: freelancer.toLowerCase(),
+          client: project?.client?.address || ''
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling ProjectCompleted event:', error);
+    }
+  }
+  //==============================================
+  async handleReputationUpdated(user, newScore, event) {
+    try {
+      console.log(`Reputation updated: User ${user}, New score: ${newScore}`);
+
+      await User.findOneAndUpdate(
+        { address: user.toLowerCase() },
+        {
+          'reputation.reputationScore': parseInt(newScore),
+          'reputation.lastUpdated': new Date()
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'reputation_updated',
+        entities: {
+          user: user.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          newScore: parseInt(newScore)
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling ReputationUpdated event:', error);
+    }
+  }
+
+  async handleProjectRated(projectId, rater, rating, event) {
+    try {
+      console.log(`Project rated: Project ${projectId}, Rater: ${rater}, Rating: ${rating}`);
+
+      const project = await Project.findOne({
+        $or: [
+          { onChainId: parseInt(projectId) },
+          { projectId: parseInt(projectId) }
+        ]
+      });
+
+      if (project) {
+        // Update project rating data
+        await Project.findOneAndUpdate(
+          {
+            $or: [
+              { onChainId: parseInt(projectId) },
+              { projectId: parseInt(projectId) }
+            ]
+          },
+          {
+            $push: {
+              'ratings': {
+                rater: rater.toLowerCase(),
+                rating: parseInt(rating),
+                ratedAt: new Date()
+              }
+            }
+          }
+        );
+
+        // Update user reputation if rating the freelancer
+        if (rater.toLowerCase() === project.client?.address?.toLowerCase() && project.freelancer?.address) {
+          const freelancer = await User.findOne({ address: project.freelancer.address.toLowerCase() });
+
+          if (freelancer) {
+            const currentTotal = freelancer.reputation.totalRatings || 0;
+            const currentAverage = freelancer.reputation.averageRating || 0;
+            const newTotal = currentTotal + 1;
+            const newAverage = ((currentAverage * currentTotal) + parseInt(rating)) / newTotal;
+
+            await User.findOneAndUpdate(
+              { address: project.freelancer.address.toLowerCase() },
+              {
+                'reputation.averageRating': newAverage,
+                'reputation.totalRatings': newTotal
+              }
+            );
+          }
+        }
+      }
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'project_rated',
+        entities: {
+          projectId: parseInt(projectId),
+          rater: rater.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          rating: parseInt(rating)
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling ProjectRated event:', error);
+    }
+  }
+
+  async handleUserRegistered(userAddress, role, timestamp, event) {
+    try {
+      console.log(`User registered: Address ${userAddress}, Role: ${role}, Timestamp: ${timestamp}`);
+
+      // Check if user already exists
+      const existingUser = await User.findOne({ address: userAddress.toLowerCase() });
+
+      if (!existingUser) {
+        // Create new user record
+        await User.create({
+          address: userAddress.toLowerCase(),
+          username: `user_${userAddress.slice(-8)}`,
+          email: `${userAddress.slice(-8)}@temp.com`, // Temporary email
+          password: 'blockchain_user', // Placeholder password
+          role: role.toLowerCase(),
+          profile: {
+            bio: 'Blockchain user',
+            availability: 'available'
+          },
+          reputation: {
+            totalProjects: 0,
+            completedProjects: 0,
+            totalEarned: 0,
+            averageRating: 0,
+            totalRatings: 0
+          },
+          isActive: true,
+          createdAt: new Date(parseInt(timestamp) * 1000),
+          'blockchain.registrationTxHash': event.transactionHash,
+          'blockchain.registrationBlockNumber': event.blockNumber
+        });
+      } else {
+        // Update existing user role and blockchain data
+        await User.findOneAndUpdate(
+          { address: userAddress.toLowerCase() },
+          {
+            role: role.toLowerCase(),
+            isActive: true,
+            updatedAt: new Date(),
+            'blockchain.registrationTxHash': event.transactionHash,
+            'blockchain.registrationBlockNumber': event.blockNumber
+          }
+        );
+      }
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'user_registered',
+        entities: {
+          user: userAddress.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          role: role.toLowerCase(),
+          registrationTime: parseInt(timestamp)
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling UserRegistered event:', error);
+    }
+  }
+  async handleUserRoleUpdated(userAddress, oldRole, newRole, event) {
+    try {
+      console.log(`User role updated: Address ${userAddress}, Old: ${oldRole}, New: ${newRole}`);
+
+      await User.findOneAndUpdate(
+        { address: userAddress.toLowerCase() },
+        {
+          role: newRole.toLowerCase(),
+          updatedAt: new Date(),
+          'blockchain.lastRoleUpdateTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'user_role_updated',
+        entities: {
+          user: userAddress.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        eventData: {
+          oldRole: oldRole.toLowerCase(),
+          newRole: newRole.toLowerCase()
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling UserRoleUpdated event:', error);
+    }
+  }
+
+  async handleUserDeactivated(userAddress, event) {
+    try {
+      console.log(`User deactivated: Address ${userAddress}`);
+
+      await User.findOneAndUpdate(
+        { address: userAddress.toLowerCase() },
+        {
+          isActive: false,
+          updatedAt: new Date(),
+          'blockchain.deactivationTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'user_deactivated',
+        entities: {
+          user: userAddress.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling UserDeactivated event:', error);
+    }
+  }
+
+  async handleUserReactivated(userAddress, event) {
+    try {
+      console.log(`User reactivated: Address ${userAddress}`);
+
+      await User.findOneAndUpdate(
+        { address: userAddress.toLowerCase() },
+        {
+          isActive: true,
+          updatedAt: new Date(),
+          'blockchain.reactivationTxHash': event.transactionHash
+        },
+        { new: true }
+      );
+
+      await this.recordTransaction({
+        txHash: event.transactionHash,
+        type: 'user_reactivated',
+        entities: {
+          user: userAddress.toLowerCase()
+        },
+        amounts: {
+          amount: '0',
+          fee: '0'
+        },
+        blockNumber: event.blockNumber
+      });
+
+    } catch (error) {
+      console.error('Error handling UserReactivated event:', error);
+    }
+  }
 
   // ==================== UTILITY METHODS ====================
 
@@ -634,7 +1502,11 @@ class BlockchainSyncManager {
   async syncHistoricalData(fromBlock = 0, toBlock = 'latest') {
     try {
       console.log(`Syncing historical data from block ${fromBlock} to ${toBlock}`);
-
+      // Validate contracts
+      if (!this.contracts.freelancePlatform.abi || this.contracts.freelancePlatform.abi.length === 0) {
+        console.warn('FreelancePlatform ABI not loaded, skipping historical sync');
+        return { success: false, error: 'Contract ABI not loaded' };
+      }
       const freelanceContract = new ethers.Contract(
         this.contracts.freelancePlatform.address,
         this.contracts.freelancePlatform.abi,
@@ -654,11 +1526,29 @@ class BlockchainSyncManager {
             case 'FundsDeposited':
               await this.handleFundsDeposited(...event.args, event);
               break;
+            case 'ApplicationSubmitted':
+              await this.handleApplicationSubmitted(...event.args, event);
+              break;
+            case 'FreelancerShortlisted':
+              await this.handleFreelancerShortlisted(...event.args, event);
+              break;
             case 'FreelancerSelected':
               await this.handleFreelancerSelected(...event.args, event);
               break;
+            case 'FreelancerAcceptedProject':
+              await this.handleFreelancerAcceptedProject(...event.args, event);
+              break;
+            case 'MilestonesAgreed':
+              await this.handleMilestonesAgreed(...event.args, event);
+              break;
+            case 'ProjectActivated':
+              await this.handleProjectActivated(...event.args, event);
+              break;
             case 'MilestoneSubmitted':
               await this.handleMilestoneSubmitted(...event.args, event);
+              break;
+            case 'MilestoneFinalSubmitted':
+              await this.handleMilestoneFinalSubmitted(...event.args, event);
               break;
             case 'MilestoneApproved':
               await this.handleMilestoneApproved(...event.args, event);
@@ -666,12 +1556,39 @@ class BlockchainSyncManager {
             case 'PaymentReleased':
               await this.handlePaymentReleased(...event.args, event);
               break;
+            case 'MilestoneExtensionRequested':
+              await this.handleMilestoneExtensionRequested(...event.args, event);
+              break;
+            case 'MilestoneExtensionApproved':
+              await this.handleMilestoneExtensionApproved(...event.args, event);
+              break;
+            case 'MilestoneFinalized':
+              await this.handleMilestoneFinalized(...event.args, event);
+              break;
+            case 'MilestoneCanceled':
+              await this.handleMilestoneCanceled(...event.args, event);
+              break;
+            case 'MilestoneAutoCancelled':
+              await this.handleMilestoneAutoCancelled(...event.args, event);
+              break;
+
             case 'DisputeRaised':
               await this.handleDisputeRaised(...event.args, event);
               break;
             case 'DisputeResolved':
               await this.handleDisputeResolved(...event.args, event);
               break;
+            case 'ProjectCompleted':
+              await this.handleProjectCompleted(...event.args, event);
+              break;
+            case 'ReputationUpdated':
+              await this.handleReputationUpdated(...event.args, event);
+              break;
+            case 'ProjectRated':
+              await this.handleProjectRated(...event.args, event);
+              break;
+            default:
+              console.warn(`Unhandled event type: ${event.event}`);
           }
           syncedEvents++;
         } catch (error) {
@@ -691,6 +1608,10 @@ class BlockchainSyncManager {
   // Get blockchain data for verification
   async verifyData(type, id) {
     try {
+      // Validate contracts first
+      if (!this.contracts.freelancePlatform.abi || this.contracts.freelancePlatform.abi.length === 0) {
+        throw new Error('FreelancePlatform contract not properly initialized');
+      }
       const freelanceContract = new ethers.Contract(
         this.contracts.freelancePlatform.address,
         this.contracts.freelancePlatform.abi,
@@ -725,13 +1646,13 @@ function createBlockchainSyncMiddleware(contracts, provider) {
 
   return {
     syncManager,
-    
+
     // Middleware to ensure data consistency
     ensureDataConsistency: async (req, res, next) => {
       try {
         // This middleware can be used to verify critical data against blockchain
         // For performance, only verify on specific routes or conditions
-        
+
         const shouldVerify = req.headers['x-verify-blockchain'] === 'true';
         if (!shouldVerify) {
           return next();
