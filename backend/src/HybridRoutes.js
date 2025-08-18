@@ -805,6 +805,248 @@ router.post('/projects/:id/apply', validateWallet, syncUser, async (req, res) =>
   }
 });
 
+//========================added()select freelancer, deposit funds, accept project----
+router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { freelancerAddress } = req.body;
+
+    if (!freelancerAddress || !validateAddress(freelancerAddress)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid freelancer address is required'
+      });
+    }
+    // Find project
+    const project = await Project.findOne({
+      $or: [
+        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
+        { onChainId: parseInt(projectId) },
+        { projectId: parseInt(projectId) }
+      ]
+    });
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+    if (project.client.address !== req.userAddress) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can select freelancer'
+      });
+    }
+
+    if (project.freelancer && project.freelancer.address) {
+      return res.status(409).json({
+        success: false,
+        error: 'Freelancer already selected for this project'
+      });
+    }
+
+    if (!['open', 'selecting'].includes(project.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Project is not accepting freelancer selection'
+      });
+    }
+    // Verify freelancer has applied
+    const application = await Application.findOne({
+      projectId: project.onChainId || project.projectId,
+      'freelancer.wallet': freelancerAddress.toLowerCase()
+    });
+
+    if (!application) {
+      return res.status(400).json({
+        success: false,
+        error: 'Freelancer has not applied for this project'
+      });
+    }
+    // Update project in database
+    project.freelancer = {
+      address: freelancerAddress.toLowerCase(),
+      displayName: application.freelancer.displayName
+    };
+    project.status = 'negotiating';
+    await project.save();
+
+    // Update application status
+    application.status = 'selected';
+    await application.save();
+
+    // contract call 
+    res.json({
+      success: true,
+      data: {
+        project,
+        selectedFreelancer: application.freelancer,
+        contractCall: {
+          contract: 'FreelancePlatform',
+          method: 'selectFreelancer',
+          params: [
+            project.onChainId || project.projectId,  // _projectId (uint256)
+            freelancerAddress                        // _freelancer (address)
+          ],
+          address: CONTRACTS.freelancePlatform.address
+        }
+      },
+      message: 'Freelancer selected successfully. Awaiting freelancer acceptance.'
+    });
+  } catch (error) {
+    handleError(error, res, 'Freelancer selection failed');
+  }
+});
+
+// Deposit Funds
+router.post('/projects/:id/deposit', validateWallet, syncUser, async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { amount, txHash } = req.body;
+
+    if (!amount || !validateAmount(amount)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid deposit amount is required'
+      });
+    }
+
+    // Find project
+    const project = await Project.findOne({
+      $or: [
+        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
+        { onChainId: parseInt(projectId) },
+        { projectId: parseInt(projectId) }
+      ]
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    if (project.client.address !== req.userAddress) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only project client can deposit funds'
+      });
+    }
+
+    if (project.status !== 'created' && project.status !== 'draft') {
+      return res.status(400).json({
+        success: false,
+        error: 'Project is not in a state that accepts funding'
+      });
+    }
+
+    if (parseFloat(amount) < project.budget.total) {
+      return res.status(400).json({
+        success: false,
+        error: `Deposit amount must be at least ${project.budget.total} ETH`
+      });
+    }
+
+    // Calculate platform fee (3% as per contract)
+    const platformFeePercent = 3; // 3%
+    const platformFee = parseFloat(amount) * (platformFeePercent / 100);
+    const escrowAmount = parseFloat(amount) - platformFee;
+
+    // Update project in database (pending blockchain confirmation)
+    project.budget.escrowBalance = escrowAmount;
+    project.budget.platformFee = platformFee;
+    project.status = 'funded'; // Will become 'open' after blockchain confirmation
+    project.blockchain.txHash = txHash;
+    
+    await project.save();
+
+    res.json({
+      success: true,
+      data: {
+        project,
+        deposit: {
+          totalAmount: parseFloat(amount),
+          escrowAmount,
+          platformFee
+        },
+        contractCall: {
+          contract: 'FreelancePlatform',
+          method: 'depositFunds',
+          params: [
+            project.onChainId || project.projectId  // _projectId (uint256)
+          ],
+          value: parseEther(amount).toString(),      // ETH value to send with transaction
+          address: CONTRACTS.freelancePlatform.address
+        }
+      },
+      message: 'Funds prepared for deposit. Please complete blockchain transaction.'
+    });
+  } catch (error) {
+    handleError(error, res, 'Fund deposit preparation failed');
+  }
+});
+
+//Accept Project (Freelancer accepting selected project)
+router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) => {
+  try {
+    const projectId = req.params.id;
+
+    // Find project
+    const project = await Project.findOne({
+      $or: [
+        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
+        { onChainId: parseInt(projectId) },
+        { projectId: parseInt(projectId) }
+      ]
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    if (!project.freelancer || project.freelancer.address !== req.userAddress) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only selected freelancer can accept project'
+      });
+    }
+
+    if (project.status !== 'negotiating') {
+      return res.status(400).json({
+        success: false,
+        error: 'Project is not in negotiating status'
+      });
+    }
+
+    // Update project status
+    project.status = 'accepted';
+    project.timeline.acceptedAt = new Date();
+    await project.save();
+
+    // Contract call for acceptance
+    res.json({
+      success: true,
+      data: {
+        project,
+        contractCall: {
+          contract: 'FreelancePlatform',
+          method: 'acceptProject',
+          params: [
+            project.onChainId || project.projectId  // _projectId (uint256)
+          ],
+          address: CONTRACTS.freelancePlatform.address
+        }
+      },
+      message: 'Project accepted successfully. Ready for milestone planning.'
+    });
+  } catch (error) {
+    handleError(error, res, 'Project acceptance failed');
+  }
+});
 // ==================== MILESTONE ROUTES ====================
 
 // Create milestones
@@ -1948,6 +2190,9 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
 
+    if (!validateAddress(winner)) {
+      return res.status(400).json({ success: false, error: 'Invalid winner address' });
+    }
     const dispute = await Dispute.findOne({ disputeId });
     if (!dispute) return res.status(404).json({ success: false, error: 'Dispute not found' });
 
@@ -1970,10 +2215,6 @@ router.post('/admin/disputes/:id/resolve', async (req, res) => {
     }    
     // Calculate resolved amount
     const resolvedAmount = amount || milestone.details.amount || 0;
-
-    if (!validateAddress(winner)) {
-      return res.status(400).json({ success: false, error: 'Invalid winner address' });
-    }
 
     // Update dispute (partial, safer)
     dispute.resolution.status = 'resolved';
