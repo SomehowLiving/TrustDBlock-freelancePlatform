@@ -4,7 +4,7 @@ const router = express.Router();
 require('dotenv').config();
 
 // MongoDB Models
-const { User, Project, Application, Milestone, Transaction, Dispute } = require('./models');
+const { User, Project, Application, Milestone, Transaction, Dispute } = require('../models');
 
 // Contract ABIs
 const freelancePlatform = require('../abis/FreelancePlatform.json');

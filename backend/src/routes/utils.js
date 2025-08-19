@@ -4,7 +4,7 @@ const router = express.Router();
 require('dotenv').config();
 
 // Import shared models
-const { User, Project, Application, Milestone, Transaction, Dispute } = require('./models');
+const { User, Project, Application, Milestone, Transaction, Dispute } = require('../models');
 
 // Contract configurations (shared)
 const { CONTRACTS, provider, freelancePlatformContract, userRegistryContract } = require('./contracts.js'); // Extract contract setup
