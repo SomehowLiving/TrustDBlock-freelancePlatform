@@ -40,6 +40,43 @@ const sampleUsers = [
       bio: 'Startup founder looking for talented developers',
       location: 'Austin, TX'
     }
+  },
+  {
+    address: '0x4567890123456789012345678901234567890123',
+    username: 'diana_devops',
+    email: 'diana@example.com',
+    password: 'password123',
+    role: 'freelancer',
+    profile: {
+      bio: 'DevOps engineer with expertise in cloud infrastructure and CI/CD pipelines',
+      skills: ['AWS', 'Docker', 'Kubernetes', 'Terraform', 'Jenkins'],
+      hourlyRate: 85,
+      location: 'Seattle, WA'
+    }
+  },
+  {
+    address: '0x5678901234567890123456789012345678901234',
+    username: 'evan_ml',
+    email: 'evan@example.com',
+    password: 'password123',
+    role: 'freelancer',
+    profile: {
+      bio: 'Machine Learning engineer with focus on NLP and computer vision',
+      skills: ['Python', 'TensorFlow', 'PyTorch', 'Scikit-learn', 'Transformers'],
+      hourlyRate: 100,
+      location: 'Boston, MA'
+    }
+  },
+  {
+    address: '0x6789012345678901234567890123456789012345',
+    username: 'frank_enterprise',
+    email: 'frank@example.com',
+    password: 'password123',
+    role: 'client',
+    profile: {
+      bio: 'CTO at an enterprise SaaS company seeking experienced developers',
+      location: 'Chicago, IL'
+    }
   }
 ];
 
@@ -98,6 +135,62 @@ const sampleProjects = [
     milestones: {
       expected: 2,
       expectedMilestones: 2
+    }
+  },
+  {
+    title: 'Cloud Infrastructure Automation',
+    description: 'Looking for a DevOps engineer to set up automated deployment pipelines and infrastructure as code using AWS and Terraform.',
+    client: {
+      address: '0x6789012345678901234567890123456789012345',
+      displayName: 'frank_enterprise'
+    },
+    budget: {
+      total: 6000,
+      totalBudget: 6000,
+      type: 'fixed'
+    },
+    category: 'DevOps',
+    skills: ['AWS', 'Terraform', 'CI/CD', 'Jenkins'],
+    requirements: {
+      skills: ['Infrastructure as Code', 'Pipeline Automation', 'Monitoring'],
+      deliverables: ['Terraform scripts', 'Jenkins pipeline', 'Documentation']
+    },
+    timeline: {
+      deadline: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), // 45 days
+      applicationDeadline: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) // 5 days
+    },
+    status: 'open',
+    milestones: {
+      expected: 3,
+      expectedMilestones: 3
+    }
+  },
+  {
+    title: 'AI-Powered Resume Parser',
+    description: 'Build a machine learning model to parse resumes and extract structured information like name, skills, experience, etc.',
+    client: {
+      address: '0x6789012345678901234567890123456789012345',
+      displayName: 'frank_enterprise'
+    },
+    budget: {
+      total: 8000,
+      totalBudget: 8000,
+      type: 'fixed'
+    },
+    category: 'Machine Learning',
+    skills: ['NLP', 'Python', 'Spacy', 'Transformers'],
+    requirements: {
+      skills: ['Resume Parsing', 'NER', 'Model Deployment'],
+      deliverables: ['Trained model', 'API endpoint', 'Model evaluation report']
+    },
+    timeline: {
+      deadline: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+      applicationDeadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) // 10 days
+    },
+    status: 'open',
+    milestones: {
+      expected: 4,
+      expectedMilestones: 4
     }
   }
 ];
@@ -197,6 +290,88 @@ async function seedDatabase() {
           ]
         },
         status: 'submitted'
+      },
+      {
+        projectId: 3, // Mock project ID
+        project: {
+          title: additionalProjects[0].title,
+          budget: additionalProjects[0].budget.total,
+          client: additionalProjects[0].client.address
+        },
+        freelancer: {
+          wallet: additionalUsers[0].address,
+          displayName: additionalUsers[0].username
+        },
+        proposal: {
+          coverLetter: 'I’ve implemented cloud-native solutions for startups and enterprises alike. I can automate your AWS infrastructure securely and efficiently.',
+          proposedBudget: 5800,
+          proposedTimeline: 40,
+          milestoneBreakdown: [
+            {
+              title: 'Infrastructure Setup',
+              description: 'Provision AWS infrastructure using Terraform',
+              amount: 2000,
+              duration: 10
+            },
+            {
+              title: 'CI/CD Pipeline',
+              description: 'Set up Jenkins pipelines with staging and production workflows',
+              amount: 2500,
+              duration: 20
+            },
+            {
+              title: 'Monitoring & Handover',
+              description: 'Set up CloudWatch & documentation handover',
+              amount: 1300,
+              duration: 10
+            }
+          ]
+        },
+        status: 'submitted'
+      },
+      {
+        projectId: 4, // Mock project ID
+        project: {
+          title: additionalProjects[1].title,
+          budget: additionalProjects[1].budget.total,
+          client: additionalProjects[1].client.address
+        },
+        freelancer: {
+          wallet: additionalUsers[1].address,
+          displayName: additionalUsers[1].username
+        },
+        proposal: {
+          coverLetter: 'I’ve worked on multiple NLP applications including resume parsers and job matching algorithms. I can deliver a high-accuracy solution.',
+          proposedBudget: 7500,
+          proposedTimeline: 50,
+          milestoneBreakdown: [
+            {
+              title: 'Data Collection & Preprocessing',
+              description: 'Collect and clean resume datasets',
+              amount: 2000,
+              duration: 10
+            },
+            {
+              title: 'Model Training',
+              description: 'Train a transformer-based NER model',
+              amount: 2500,
+              duration: 15
+            },
+            {
+              title: 'API Development',
+              description: 'Deploy model via RESTful API',
+              amount: 2000,
+              duration: 15
+            },
+            {
+              title: 'Testing & Delivery',
+              description: 'Evaluate model, test integration, and finalize docs',
+              amount: 1000,
+              duration: 10
+            }
+          ]
+        },
+        status: 'submitted'
       }
     ];
 
@@ -205,7 +380,7 @@ async function seedDatabase() {
 
     await mongoose.disconnect();
     console.log('✅ Database seeding completed');
-    
+
   } catch (error) {
     console.error('❌ Database seeding failed:', error);
     process.exit(1);
