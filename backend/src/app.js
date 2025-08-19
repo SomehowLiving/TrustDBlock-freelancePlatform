@@ -9,7 +9,8 @@ const morgan = require('morgan');
 require('dotenv').config();
 
 // Import routes and middleware
-const hybridRoutes = require('./HybridRoutes');
+// const hybridRoutes = require('./HybridRoutes');
+const Routes= require('./routes/index.js'); // Modular routes
 const { createBlockchainSyncMiddleware } = require('./middleware/blockchainSync');
 const { ethers } = require('ethers');
 
@@ -361,7 +362,8 @@ class HybridFreelancePlatform {
     });
 
     // Main API routes
-    this.app.use('/api', hybridRoutes);
+    // this.app.use('/api', hybridRoutes);
+    this.app.use('/api', Routes);
 
     // Root endpoint
     this.app.get('/', (req, res) => {
