@@ -7,8 +7,8 @@ require('dotenv').config();
 const { User, Project, Application, Milestone, Transaction, Dispute } = require('../models');
 
 // Contract ABIs
-const freelancePlatform = require('../abis/FreelancePlatform.json');
-const userRegistry = require('../abis/UserRegistry.json');
+const freelancePlatform = require('../../abis/FreelancePlatform.json');
+const userRegistry = require('../../abis/UserRegistry.json');
 
 // Contract configurations
 const CONTRACTS = {
