@@ -947,18 +947,11 @@ router.post('/projects/:id/deposit', validateWallet, syncUser, async (req, res) 
         error: `Deposit amount must be at least ${project.budget.total} ETH`
       });
     }
-
-    // Calculate platform fee (3% as per contract)
-    const platformFeePercent = 3; // 3%
-    const platformFee = parseFloat(amount) * (platformFeePercent / 100);
-    const escrowAmount = parseFloat(amount) - platformFee;
-
-    // Update project in database (pending blockchain confirmation)
-    project.budget.escrowBalance = escrowAmount;
-    project.budget.platformFee = platformFee;
-    project.status = 'funded'; // Will become 'open' after blockchain confirmation
+    // DON'T calculate fees here - let contract do it
+    // Just update basic project status
+    project.status = 'funding'; // Pending blockchain confirmation
     project.blockchain.txHash = txHash;
-    
+
     await project.save();
 
     res.json({
@@ -976,16 +969,156 @@ router.post('/projects/:id/deposit', validateWallet, syncUser, async (req, res) 
           params: [
             project.onChainId || project.projectId  // _projectId (uint256)
           ],
-          value: parseEther(amount).toString(),      // ETH value to send with transaction
+          value: parseEther(amount).toString(),      // ETH value to send with transaction- Sending full amount
           address: CONTRACTS.freelancePlatform.address
         }
       },
-      message: 'Funds prepared for deposit. Please complete blockchain transaction.'
+      message: 'Ready to deposit funds. Contract will handle fee deduction automatically'
     });
   } catch (error) {
     handleError(error, res, 'Fund deposit preparation failed');
   }
 });
+
+// Sync actual values from blockchain AFTER the txn
+router.post('/projects/:id/sync-deposit', async (req, res) => {
+  try {
+    const { onChainId, txHash } = req.body;
+    const projectId = req.params.id;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found'
+      });
+    }
+
+    // Get ACTUAL values from blockchain after transaction
+    try {
+      const onChainProject = await freelancePlatformContract.getProject(onChainId);
+      
+      // Sync real values from blockchain
+      project.onChainId = onChainId;
+      project.budget.escrowBalance = parseFloat(formatEther(onChainProject.escrowBalance));
+      project.blockchain.status = 'confirmed';
+      project.blockchain.txHash = txHash;
+      project.status = 'open'; // Now truly funded
+      
+      await project.save();
+
+      res.json({
+        success: true,
+        data: project,
+        message: 'Project funding synced with blockchain'
+      });
+    } catch (contractError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Failed to verify deposit on blockchain'
+      });
+    }
+  } catch (error) {
+    handleError(error, res, 'Deposit sync failed');
+  }
+});
+
+// Get fee information from contract (read-only)
+router.get('/platform/fees', async (req, res) => {
+  try {
+    // Read fee percentages from contract
+    const platformFeePercent = await freelancePlatformContract.platformFeePercent();
+    const freelancerFeePercent = await freelancePlatformContract.freelancerFeePercent();
+
+    // Convert basis points to percentage
+    const platformFeePercentage = parseInt(platformFeePercent.toString()) / 100; // 300 → 3%
+    const freelancerFeePercentage = parseInt(freelancerFeePercent.toString()) / 100; // 250 → 2.5%
+
+    res.json({
+      success: true,
+      data: {
+        platformFee: {
+          basisPoints: platformFeePercent.toString(),
+          percentage: platformFeePercentage
+        },
+        freelancerFee: {
+          basisPoints: freelancerFeePercent.toString(),
+          percentage: freelancerFeePercentage
+        },
+        note: "Fees are automatically deducted by the smart contract"
+      }
+    });
+  } catch (error) {
+    // Fallback to default values if contract call fails
+    res.json({
+      success: true,
+      data: {
+        platformFee: { basisPoints: "300", percentage: 3 },
+        freelancerFee: { basisPoints: "250", percentage: 2.5 },
+        note: "Default fee values - contract call failed"
+      }
+    });
+  }
+});
+
+// ✅ CORRECT: Frontend helper to calculate fees for UI display ONLY
+router.post('/calculate-fees', async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount || !validateAmount(amount)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid amount required'
+      });
+    }
+
+    try {
+      // Get current fees from contract
+      const platformFeePercent = await freelancePlatformContract.platformFeePercent();
+      const freelancerFeePercent = await freelancePlatformContract.freelancerFeePercent();
+
+      const platformFeePercentage = parseInt(platformFeePercent.toString()) / 10000; // Basis points to decimal
+      const freelancerFeePercentage = parseInt(freelancerFeePercent.toString()) / 10000;
+
+      const amountFloat = parseFloat(amount);
+      const platformFee = amountFloat * platformFeePercentage;
+      const freelancerFee = amountFloat * freelancerFeePercentage;
+      const netAmount = amountFloat - platformFee;
+
+      res.json({
+        success: true,
+        data: {
+          inputAmount: amountFloat,
+          platformFee: platformFee,
+          freelancerFee: freelancerFee, // Applied later on milestone payments
+          netEscrowAmount: netAmount,
+          note: "This is for UI display only. Actual fees are calculated by smart contract."
+        }
+      });
+    } catch (contractError) {
+      // Fallback calculation with default values
+      const platformFee = parseFloat(amount) * 0.03; // 3%
+      const freelancerFee = parseFloat(amount) * 0.025; // 2.5%
+      const netAmount = parseFloat(amount) - platformFee;
+
+      res.json({
+        success: true,
+        data: {
+          inputAmount: parseFloat(amount),
+          platformFee: platformFee,
+          freelancerFee: freelancerFee,
+          netEscrowAmount: netAmount,
+          note: "Estimated fees - using default values"
+        }
+      });
+    }
+  } catch (error) {
+    handleError(error, res, 'Fee calculation failed');
+  }
+});
+
+
 
 //Accept Project (Freelancer accepting selected project)
 router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) => {
