@@ -1,281 +1,301 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { MessageThread } from '@/components/MessageThread';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/store/authStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import { CommunicationData } from '@/types';
 import { 
+  MessageCircle, 
   Search, 
-  Send, 
-  Paperclip, 
-  MoreVertical, 
-  Phone, 
-  Video,
-  Star,
-  CheckCircle
+  Plus, 
+  Users, 
+  Clock,
+  CheckCircle,
+  Dot
 } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 
-export const Messages: React.FC = () => {
-  const [selectedConversation, setSelectedConversation] = useState<number | null>(1);
-  const [newMessage, setNewMessage] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+export default function Messages() {
+  const { user } = useAuthStore();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedCommunication, setSelectedCommunication] = useState<CommunicationData | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const conversations = [
-    {
-      id: 1,
-      name: 'TechCorp Inc.',
-      lastMessage: 'Thanks for the update on the smart contract development. Looking forward to the next milestone.',
-      timestamp: '2 mins ago',
-      unreadCount: 0,
-      avatar: 'TC',
-      online: true,
-      project: 'DeFi Trading Platform',
-    },
-    {
-      id: 2,
-      name: 'HealthTech Solutions',
-      lastMessage: 'Can we schedule a call to discuss the mobile app features?',
-      timestamp: '1 hour ago',
-      unreadCount: 2,
-      avatar: 'HS',
-      online: false,
-      project: 'Healthcare Mobile App',
-    },
-    {
-      id: 3,
-      name: 'CryptoAnalytics',
-      lastMessage: 'The analytics dashboard looks great! Just a few minor adjustments needed.',
-      timestamp: '3 hours ago',
-      unreadCount: 0,
-      avatar: 'CA',
-      online: true,
-      project: 'Analytics Platform',
-    },
-  ];
+  const { data: communications, isLoading } = useQuery({
+    queryKey: ['/api/communications/my'],
+    refetchInterval: 10000, // Refresh every 10 seconds
+  });
 
-  const messages = [
-    {
-      id: 1,
-      sender: 'client',
-      name: 'TechCorp Inc.',
-      message: 'Hi Sarah! Hope you\'re doing well. I wanted to check in on the progress of the smart contract development.',
-      timestamp: '10:30 AM',
-      type: 'text',
-    },
-    {
-      id: 2,
-      sender: 'me',
-      name: 'You',
-      message: 'Hello! Great to hear from you. I\'ve made excellent progress on the smart contracts. The core trading functionality is complete and I\'m currently working on the yield farming mechanisms.',
-      timestamp: '10:35 AM',
-      type: 'text',
-    },
-    {
-      id: 3,
-      sender: 'me',
-      name: 'You',
-      message: 'I\'ve also completed the initial security tests and everything looks solid. Would you like me to share a preview of the current implementation?',
-      timestamp: '10:36 AM',
-      type: 'text',
-    },
-    {
-      id: 4,
-      sender: 'client',
-      name: 'TechCorp Inc.',
-      message: 'That sounds fantastic! Yes, I\'d love to see a preview. Also, could you provide an updated timeline for the remaining milestones?',
-      timestamp: '10:45 AM',
-      type: 'text',
-    },
-    {
-      id: 5,
-      sender: 'me',
-      name: 'You',
-      message: 'Absolutely! I\'ll prepare a demo and send you the updated timeline by end of day. The current pace suggests we\'ll finish ahead of schedule.',
-      timestamp: '11:00 AM',
-      type: 'text',
-    },
-    {
-      id: 6,
-      sender: 'client',
-      name: 'TechCorp Inc.',
-      message: 'Thanks for the update on the smart contract development. Looking forward to the next milestone.',
-      timestamp: '2 mins ago',
-      type: 'text',
-    },
-  ];
+  // WebSocket connection for real-time messages
+  const { sendMessage } = useWebSocket({
+    onMessage: (data) => {
+      if (data.type === 'new_message') {
+        // Refresh communications when new message received
+        queryClient.invalidateQueries({ queryKey: ['/api/communications/my'] });
+        
+        // Update selected communication if it matches
+        if (selectedCommunication && data.communicationId === selectedCommunication.id) {
+          queryClient.invalidateQueries({ queryKey: ['/api/communications', data.communicationId] });
+        }
+      }
+    }
+  });
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    conv.project.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ communicationId, message }: { communicationId: string, message: string }) => {
+      // Send via WebSocket for real-time delivery
+      sendMessage({
+        type: 'send_message',
+        communicationId,
+        messageData: {
+          sender: {
+            wallet: user?.address || '',
+            displayName: user?.username || '',
+            role: user?.role || ''
+          },
+          message: {
+            content: message,
+            type: 'text'
+          }
+        }
+      });
+      
+      // Also update via API for persistence
+      const response = await apiRequest('PUT', `/api/communications/${communicationId}`, {
+        thread: [...(selectedCommunication?.thread || []), {
+          id: Math.random().toString(36).substr(2, 9),
+          sender: {
+            wallet: user?.address || '',
+            displayName: user?.username || '',
+            role: user?.role || ''
+          },
+          message: {
+            content: message,
+            type: 'text'
+          },
+          timestamp: new Date().toISOString(),
+          edited: { isEdited: false },
+          metadata: { readBy: [] }
+        }]
+      });
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/communications/my'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Send Message",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
 
-  const selectedConv = conversations.find(c => c.id === selectedConversation);
+  const filteredCommunications = communications?.filter((comm: CommunicationData) => {
+    if (!searchQuery) return true;
+    
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      comm.participants.some(p => p.displayName.toLowerCase().includes(searchLower)) ||
+      comm.summary.lastMessage?.content.toLowerCase().includes(searchLower)
+    );
+  }) || [];
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newMessage.trim()) {
-      // Add message logic here
-      console.log('Sending message:', newMessage);
-      setNewMessage('');
+  const getUnreadCount = (communication: CommunicationData) => {
+    return communication.summary.unreadCounts.find(uc => 
+      uc.wallet.toLowerCase() === user?.address?.toLowerCase()
+    )?.count || 0;
+  };
+
+  const getOtherParticipants = (communication: CommunicationData) => {
+    return communication.participants.filter(p => 
+      p.wallet.toLowerCase() !== user?.address?.toLowerCase()
+    );
+  };
+
+  const handleSendMessage = (message: string) => {
+    if (selectedCommunication) {
+      sendMessageMutation.mutate({
+        communicationId: selectedCommunication.id,
+        message
+      });
     }
   };
 
-  return (
-    <div className="h-[calc(100vh-8rem)] bg-white rounded-lg shadow-sm border border-gray-200 flex">
-      {/* Conversations List */}
-      <div className="w-1/3 border-r border-gray-200 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-xl font-semibold text-gray-900 mb-3">Messages</h1>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search conversations..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-
-        {/* Conversations */}
-        <div className="flex-1 overflow-y-auto">
-          {filteredConversations.map((conversation) => (
-            <div
-              key={conversation.id}
-              onClick={() => setSelectedConversation(conversation.id)}
-              className={`p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors ${
-                selectedConversation === conversation.id ? 'bg-blue-50 border-r-2 border-blue-600' : ''
-              }`}
-            >
-              <div className="flex items-start space-x-3">
-                <div className="relative">
-                  <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                    {conversation.avatar}
-                  </div>
-                  {conversation.online && (
-                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                  )}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="font-medium text-gray-900 truncate">{conversation.name}</h3>
-                    <span className="text-xs text-gray-500">{conversation.timestamp}</span>
-                  </div>
-                  <p className="text-sm text-gray-500 mb-1">{conversation.project}</p>
-                  <p className="text-sm text-gray-600 line-clamp-2">{conversation.lastMessage}</p>
-                </div>
-                
-                {conversation.unreadCount > 0 && (
-                  <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
-                    <span className="text-xs text-white font-medium">{conversation.unreadCount}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card>
+          <CardContent className="text-center py-8">
+            <MessageCircle className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">Login Required</h3>
+            <p className="text-muted-foreground">
+              Please log in to access your messages.
+            </p>
+          </CardContent>
+        </Card>
       </div>
+    );
+  }
 
-      {/* Chat Area */}
-      {selectedConv ? (
-        <div className="flex-1 flex flex-col">
-          {/* Chat Header */}
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="relative">
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                  {selectedConv.avatar}
-                </div>
-                {selectedConv.online && (
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                )}
+  return (
+    <div className="container mx-auto px-4 py-8 h-[calc(100vh-8rem)]" data-testid="messages-container">
+      <div className="grid lg:grid-cols-12 gap-6 h-full">
+        {/* Conversations List */}
+        <div className="lg:col-span-4 space-y-4">
+          <Card className="h-full flex flex-col" data-testid="card-conversations-list">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center">
+                  <MessageCircle className="w-5 h-5 mr-2" />
+                  Messages
+                </CardTitle>
+                <Button size="sm" variant="outline" data-testid="button-new-message">
+                  <Plus className="w-4 h-4" />
+                </Button>
               </div>
-              <div>
-                <h2 className="font-medium text-gray-900">{selectedConv.name}</h2>
-                <p className="text-sm text-gray-600">{selectedConv.project}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                <Phone className="w-5 h-5" />
-              </button>
-              <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                <Video className="w-5 h-5" />
-              </button>
-              <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                <MoreVertical className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.sender === 'me' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-xs lg:max-w-md xl:max-w-lg ${
-                  message.sender === 'me' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 text-gray-900'
-                } rounded-lg p-3`}>
-                  <p className="text-sm">{message.message}</p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className={`text-xs ${
-                      message.sender === 'me' ? 'text-blue-100' : 'text-gray-500'
-                    }`}>
-                      {message.timestamp}
-                    </span>
-                    {message.sender === 'me' && (
-                      <CheckCircle className="w-3 h-3 text-blue-100" />
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Message Input */}
-          <div className="p-4 border-t border-gray-200">
-            <form onSubmit={handleSendMessage} className="flex items-center space-x-3">
-              <button
-                type="button"
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <Paperclip className="w-5 h-5" />
-              </button>
               
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search conversations..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-search-conversations"
                 />
               </div>
-              
-              <button
-                type="submit"
-                disabled={!newMessage.trim()}
-                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Send className="w-5 h-5" />
-              </button>
-            </form>
-          </div>
+            </CardHeader>
+
+            <CardContent className="flex-1 p-0">
+              <ScrollArea className="h-full">
+                {isLoading ? (
+                  <div className="p-4 space-y-4" data-testid="conversations-loading">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="animate-pulse">
+                        <div className="flex items-center space-x-3 p-3">
+                          <div className="w-10 h-10 bg-muted rounded-full"></div>
+                          <div className="flex-1">
+                            <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+                            <div className="h-3 bg-muted rounded w-1/2"></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : filteredCommunications.length > 0 ? (
+                  <div className="space-y-1 p-2">
+                    {filteredCommunications.map((communication: CommunicationData) => {
+                      const otherParticipants = getOtherParticipants(communication);
+                      const unreadCount = getUnreadCount(communication);
+                      const isSelected = selectedCommunication?.id === communication.id;
+
+                      return (
+                        <div
+                          key={communication.id}
+                          className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                            isSelected 
+                              ? 'bg-accent text-accent-foreground' 
+                              : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => setSelectedCommunication(communication)}
+                          data-testid={`conversation-item-${communication.id}`}
+                        >
+                          <div className="flex items-start space-x-3">
+                            <div className="relative">
+                              <Avatar className="w-10 h-10">
+                                <AvatarFallback>
+                                  {otherParticipants[0]?.displayName[0]?.toUpperCase() || 'U'}
+                                </AvatarFallback>
+                              </Avatar>
+                              {unreadCount > 0 && (
+                                <div className="absolute -top-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                                  <span className="text-xs text-primary-foreground font-medium">
+                                    {unreadCount > 9 ? '9+' : unreadCount}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-1">
+                                <h4 className="text-sm font-medium truncate" data-testid={`text-conversation-name-${communication.id}`}>
+                                  {otherParticipants.map(p => p.displayName).join(', ') || 'Unknown'}
+                                </h4>
+                                {communication.summary.lastMessage && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatDistanceToNow(new Date(communication.summary.lastMessage.timestamp), { addSuffix: true })}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center space-x-1">
+                                {otherParticipants.map((participant, index) => (
+                                  <Badge key={participant.wallet} variant="secondary" className="text-xs">
+                                    {participant.role}
+                                  </Badge>
+                                ))}
+                              </div>
+
+                              {communication.summary.lastMessage && (
+                                <p className="text-sm text-muted-foreground truncate mt-1" data-testid={`text-last-message-${communication.id}`}>
+                                  {communication.summary.lastMessage.content}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-8" data-testid="no-conversations">
+                    <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-sm font-medium text-foreground mb-2">No Conversations</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {searchQuery ? 'No conversations match your search' : 'Start working on projects to begin messaging'}
+                    </p>
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Send className="w-10 h-10 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Select a conversation</h3>
-            <p className="text-gray-600">Choose a conversation from the left to start messaging</p>
-          </div>
+
+        {/* Message Thread */}
+        <div className="lg:col-span-8">
+          {selectedCommunication ? (
+            <MessageThread 
+              communication={selectedCommunication}
+              onSendMessage={handleSendMessage}
+            />
+          ) : (
+            <Card className="h-full" data-testid="card-no-conversation-selected">
+              <CardContent className="h-full flex items-center justify-center">
+                <div className="text-center">
+                  <MessageCircle className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">Select a Conversation</h3>
+                  <p className="text-muted-foreground">
+                    Choose a conversation from the sidebar to start messaging
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
-};
+}

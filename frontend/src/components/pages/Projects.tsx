@@ -1,320 +1,249 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { 
-  Search, 
-  Filter, 
-  DollarSign, 
-  Clock, 
-  Users,
-  MapPin,
-  Star,
-  Briefcase
-} from 'lucide-react';
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { ProjectCard } from '@/components/ProjectCard';
+import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/store/authStore';
+import { Link } from 'wouter';
+import { Search, Filter, Plus, Briefcase } from 'lucide-react';
 
-export const Projects: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedBudget, setSelectedBudget] = useState('all');
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+export default function Projects() {
+  const { user } = useAuthStore();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedBudget, setSelectedBudget] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
 
-  const categories = [
-    { value: 'all', label: 'All Categories' },
-    { value: 'web-development', label: 'Web Development' },
-    { value: 'mobile-development', label: 'Mobile Development' },
-    { value: 'blockchain', label: 'Blockchain' },
-    { value: 'design', label: 'Design' },
-    { value: 'marketing', label: 'Marketing' },
-  ];
-
-  const budgetRanges = [
-    { value: 'all', label: 'All Budgets' },
-    { value: '0-1000', label: '$0 - $1,000' },
-    { value: '1000-5000', label: '$1,000 - $5,000' },
-    { value: '5000-10000', label: '$5,000 - $10,000' },
-    { value: '10000+', label: '$10,000+' },
-  ];
-
-  const skillOptions = [
-    'React', 'Node.js', 'Python', 'Blockchain', 'Smart Contracts', 
-    'UI/UX Design', 'Mobile Development', 'Machine Learning'
-  ];
-
-  const projects = [
-    {
-      id: 1,
-      title: 'DeFi Trading Platform Development',
-      description: 'Build a comprehensive DeFi trading platform with advanced features including yield farming, liquidity pools, and governance mechanisms.',
-      budget: '$8,000 - $12,000',
-      duration: '3-4 months',
-      client: 'CryptoTech Solutions',
-      clientRating: 4.8,
-      clientLocation: 'United States',
-      postedTime: '2 hours ago',
-      proposals: 12,
-      skills: ['React', 'Node.js', 'Blockchain', 'Smart Contracts'],
-      category: 'blockchain',
-      isUrgent: true,
-      verified: true,
-    },
-    {
-      id: 2,
-      title: 'React Native Mobile App for Healthcare',
-      description: 'Develop a mobile application for healthcare management with patient records, appointment scheduling, and telemedicine features.',
-      budget: '$5,000 - $8,000',
-      duration: '2-3 months',
-      client: 'HealthTech Inc.',
-      clientRating: 4.9,
-      clientLocation: 'Canada',
-      postedTime: '1 day ago',
-      proposals: 8,
-      skills: ['React Native', 'Node.js', 'MongoDB', 'API Integration'],
-      category: 'mobile-development',
-      isUrgent: false,
-      verified: true,
-    },
-    {
-      id: 3,
-      title: 'E-commerce Website with Payment Integration',
-      description: 'Create a modern e-commerce website with advanced payment processing, inventory management, and analytics dashboard.',
-      budget: '$3,000 - $5,000',
-      duration: '1-2 months',
-      client: 'RetailCorp',
-      clientRating: 4.6,
-      clientLocation: 'United Kingdom',
-      postedTime: '3 days ago',
-      proposals: 15,
-      skills: ['React', 'Express.js', 'PostgreSQL', 'Stripe API'],
-      category: 'web-development',
-      isUrgent: false,
-      verified: false,
-    },
-    {
-      id: 4,
-      title: 'AI-Powered Analytics Dashboard',
-      description: 'Build an analytics dashboard with machine learning capabilities for data visualization and predictive analytics.',
-      budget: '$6,000 - $10,000',
-      duration: '2-3 months',
-      client: 'DataInsights Pro',
-      clientRating: 4.7,
-      clientLocation: 'Germany',
-      postedTime: '5 days ago',
-      proposals: 6,
-      skills: ['Python', 'Machine Learning', 'React', 'Data Analytics'],
-      category: 'web-development',
-      isUrgent: false,
-      verified: true,
-    },
-  ];
-
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || project.category === selectedCategory;
-    const matchesSkills = selectedSkills.length === 0 || 
-                         selectedSkills.some(skill => project.skills.includes(skill));
-    
-    return matchesSearch && matchesCategory && matchesSkills;
+  const { data: projects, isLoading, error } = useQuery({
+    queryKey: ['/api/projects', { 
+      search: searchQuery || undefined,
+      category: selectedCategory || undefined,
+      status: selectedStatus || 'open',
+      limit: 20 
+    }],
+    refetchInterval: false,
   });
 
-  const toggleSkill = (skill: string) => {
-    setSelectedSkills(prev => 
-      prev.includes(skill) 
-        ? prev.filter(s => s !== skill)
-        : [...prev, skill]
-    );
+  const handleSearch = () => {
+    // Query will automatically re-run due to dependency on searchQuery
   };
 
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('');
+    setSelectedBudget('');
+    setSelectedStatus('');
+  };
+
+  const categories = ['Development', 'Design', 'Marketing', 'Writing', 'Consulting', 'Other'];
+  const budgetRanges = [
+    { label: '$500 - $1,000', value: '500-1000' },
+    { label: '$1,000 - $5,000', value: '1000-5000' },
+    { label: '$5,000 - $10,000', value: '5000-10000' },
+    { label: '$10,000+', value: '10000+' }
+  ];
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card>
+          <CardContent className="text-center py-8">
+            <p className="text-destructive" data-testid="text-error-message">Failed to load projects. Please try again.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto px-4 py-8 space-y-8" data-testid="projects-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Browse Projects</h1>
-          <p className="text-gray-600 mt-1">Find your next opportunity from {projects.length} available projects</p>
+          <h1 className="text-3xl font-bold text-foreground" data-testid="text-projects-title">
+            Browse Projects
+          </h1>
+          <p className="text-muted-foreground" data-testid="text-projects-description">
+            Discover amazing Web3 projects and start your next collaboration
+          </p>
         </div>
-        <Link
-          to="/projects/create"
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Briefcase className="w-5 h-5 mr-2" />
-          Post a Project
-        </Link>
+        {user?.role === 'client' && (
+          <Button asChild data-testid="button-post-project">
+            <Link href="/projects/new">
+              <Plus className="w-4 h-4 mr-2" />
+              Post Project
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          {/* Search */}
-          <div className="lg:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search Projects</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search by title or description..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      <Card data-testid="card-search-filters">
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Filter className="w-5 h-5 mr-2" />
+            Search & Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Search Bar */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Input
+                placeholder="Search projects by title, description, or skills..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                data-testid="input-search"
               />
             </div>
+            <Button onClick={handleSearch} data-testid="button-search">
+              <Search className="w-4 h-4 mr-2" />
+              Search
+            </Button>
           </div>
 
-          {/* Category Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {categories.map(category => (
-                <option key={category.value} value={category.value}>
-                  {category.label}
-                </option>
-              ))}
-            </select>
+          {/* Filter Controls */}
+          <div className="grid md:grid-cols-4 gap-4">
+            <Select value={selectedCategory} onValueChange={setSelectedCategory} data-testid="select-category">
+              <SelectTrigger>
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Categories</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={selectedBudget} onValueChange={setSelectedBudget} data-testid="select-budget">
+              <SelectTrigger>
+                <SelectValue placeholder="Budget Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Budgets</SelectItem>
+                {budgetRanges.map((range) => (
+                  <SelectItem key={range.value} value={range.value}>
+                    {range.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={selectedStatus} onValueChange={setSelectedStatus} data-testid="select-status">
+              <SelectTrigger>
+                <SelectValue placeholder="Project Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value="open">Open for Applications</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button variant="outline" onClick={clearFilters} data-testid="button-clear-filters">
+              Clear Filters
+            </Button>
           </div>
 
-          {/* Budget Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Budget</label>
-            <select
-              value={selectedBudget}
-              onChange={(e) => setSelectedBudget(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {budgetRanges.map(budget => (
-                <option key={budget.value} value={budget.value}>
-                  {budget.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Skills Filter */}
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Skills</label>
-          <div className="flex flex-wrap gap-2">
-            {skillOptions.map(skill => (
-              <button
-                key={skill}
-                onClick={() => toggleSkill(skill)}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                  selectedSkills.includes(skill)
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {skill}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+          {/* Active Filters */}
+          {(searchQuery || selectedCategory || selectedBudget || selectedStatus) && (
+            <div className="flex flex-wrap gap-2 pt-2 border-t">
+              <span className="text-sm text-muted-foreground">Active filters:</span>
+              {searchQuery && (
+                <Badge variant="secondary" data-testid="badge-filter-search">
+                  Search: {searchQuery}
+                </Badge>
+              )}
+              {selectedCategory && (
+                <Badge variant="secondary" data-testid="badge-filter-category">
+                  Category: {selectedCategory}
+                </Badge>
+              )}
+              {selectedBudget && (
+                <Badge variant="secondary" data-testid="badge-filter-budget">
+                  Budget: {budgetRanges.find(r => r.value === selectedBudget)?.label}
+                </Badge>
+              )}
+              {selectedStatus && (
+                <Badge variant="secondary" data-testid="badge-filter-status">
+                  Status: {selectedStatus}
+                </Badge>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Results */}
-      <div className="flex items-center justify-between">
-        <p className="text-gray-600">
-          Showing {filteredProjects.length} of {projects.length} projects
-        </p>
-        <div className="flex items-center space-x-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <select className="text-sm border border-gray-300 rounded-lg px-3 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-            <option>Newest First</option>
-            <option>Budget: High to Low</option>
-            <option>Budget: Low to High</option>
-            <option>Most Proposals</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Project Cards */}
-      <div className="space-y-6">
-        {filteredProjects.map((project) => (
-          <div key={project.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
-                  <h3 className="text-xl font-semibold text-gray-900 hover:text-blue-600 cursor-pointer">
-                    <Link to={`/projects/${project.id}`}>
-                      {project.title}
-                    </Link>
-                  </h3>
-                  {project.isUrgent && (
-                    <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">
-                      Urgent
-                    </span>
-                  )}
-                  {project.verified && (
-                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                      Verified Client
-                    </span>
-                  )}
-                </div>
-
-                <p className="text-gray-600 mb-4 line-clamp-2">{project.description}</p>
-
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {project.skills.map((skill, index) => (
-                    <span
-                      key={index}
-                      className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                  <div className="flex items-center">
-                    <DollarSign className="w-4 h-4 mr-1" />
-                    {project.budget}
+      <div>
+        {isLoading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="projects-loading">
+            {[...Array(6)].map((_, i) => (
+              <Card key={i} className="animate-pulse">
+                <CardHeader>
+                  <div className="h-4 bg-muted rounded w-3/4"></div>
+                  <div className="h-4 bg-muted rounded w-1/2"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-muted rounded"></div>
+                    <div className="h-4 bg-muted rounded w-5/6"></div>
                   </div>
-                  <div className="flex items-center">
-                    <Clock className="w-4 h-4 mr-1" />
-                    {project.duration}
-                  </div>
-                  <div className="flex items-center">
-                    <Users className="w-4 h-4 mr-1" />
-                    {project.proposals} proposals
-                  </div>
-                  <div className="flex items-center">
-                    <MapPin className="w-4 h-4 mr-1" />
-                    {project.clientLocation}
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:text-right space-y-3">
-                <div className="flex lg:flex-col items-center lg:items-end space-x-4 lg:space-x-0 lg:space-y-2">
-                  <div className="flex items-center">
-                    <Star className="w-4 h-4 text-yellow-400 fill-current mr-1" />
-                    <span className="font-medium">{project.clientRating}</span>
-                  </div>
-                  <span className="text-sm text-gray-600">{project.client}</span>
-                </div>
-                <div className="text-sm text-gray-500">Posted {project.postedTime}</div>
-                <Link
-                  to={`/projects/${project.id}`}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  View Details
-                </Link>
-              </div>
-            </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        ))}
-      </div>
+        ) : projects && projects.length > 0 ? (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <p className="text-muted-foreground" data-testid="text-results-count">
+                Found {projects.length} projects
+              </p>
+            </div>
 
-      {/* Load More */}
-      {filteredProjects.length > 0 && (
-        <div className="text-center">
-          <button className="px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium">
-            Load More Projects
-          </button>
-        </div>
-      )}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="projects-grid">
+              {projects.map((project: any) => (
+                <ProjectCard key={project.id} project={project} />
+              ))}
+            </div>
+
+            {/* Load More */}
+            {projects.length >= 20 && (
+              <div className="text-center mt-8">
+                <Button variant="outline" data-testid="button-load-more">
+                  Load More Projects
+                </Button>
+              </div>
+            )}
+          </>
+        ) : (
+          <Card data-testid="card-no-results">
+            <CardContent className="text-center py-12">
+              <Briefcase className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">No Projects Found</h3>
+              <p className="text-muted-foreground mb-6">
+                {searchQuery || selectedCategory || selectedBudget || selectedStatus
+                  ? 'Try adjusting your search criteria or filters'
+                  : 'No projects are currently available'
+                }
+              </p>
+              {(searchQuery || selectedCategory || selectedBudget || selectedStatus) && (
+                <Button variant="outline" onClick={clearFilters} data-testid="button-clear-all-filters">
+                  Clear All Filters
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
-};
+}

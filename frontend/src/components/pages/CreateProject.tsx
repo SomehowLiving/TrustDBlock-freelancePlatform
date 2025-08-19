@@ -1,697 +1,450 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useRouter } from 'wouter';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/store/authStore';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import { 
-  ArrowLeft, 
-  ArrowRight, 
-  DollarSign, 
-  Calendar, 
-  Users, 
-  Upload,
-  Plus,
-  X,
-  Trash2
-} from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Plus, X, Calendar, DollarSign, Clock, Tag } from 'lucide-react';
 
 const projectSchema = z.object({
   title: z.string().min(10, 'Title must be at least 10 characters'),
-  description: z.string().min(100, 'Description must be at least 100 characters'),
-  category: z.string().min(1, 'Category is required'),
+  description: z.string().min(50, 'Description must be at least 50 characters'),
+  category: z.string().min(1, 'Please select a category'),
+  budget: z.object({
+    total: z.number().min(100, 'Budget must be at least $100'),
+    type: z.enum(['fixed', 'hourly'])
+  }),
+  timeline: z.object({
+    deadline: z.string().min(1, 'Please set a deadline'),
+    expectedDuration: z.number().optional()
+  }),
+  milestones: z.object({
+    expected: z.number().min(1, 'At least 1 milestone is required')
+  }),
   skills: z.array(z.string()).min(1, 'At least one skill is required'),
-  budgetMin: z.number().min(100, 'Minimum budget must be at least $100'),
-  budgetMax: z.number().min(100, 'Maximum budget must be at least $100'),
-  timeline: z.string().min(1, 'Timeline is required'),
-  experienceLevel: z.enum(['entry', 'intermediate', 'expert']),
-  projectType: z.enum(['fixed', 'hourly']),
+  requirements: z.object({
+    experience: z.string(),
+    deliverables: z.array(z.string())
+  }).optional()
 });
 
-type ProjectForm = z.infer<typeof projectSchema>;
+type ProjectFormData = z.infer<typeof projectSchema>;
 
-export const CreateProject: React.FC = () => {
-  const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [customSkill, setCustomSkill] = useState('');
-  const [milestones, setMilestones] = useState([
-    { title: '', amount: 0, description: '', duration: '' }
-  ]);
-  const [attachments, setAttachments] = useState<File[]>([]);
+export default function CreateProject() {
+  const [, setLocation] = useRouter();
+  const { user } = useAuthStore();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [skillInput, setSkillInput] = useState('');
+  const [skills, setSkills] = useState<string[]>([]);
+  const [deliverableInput, setDeliverableInput] = useState('');
+  const [deliverables, setDeliverables] = useState<string[]>([]);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-    setValue,
-    watch,
-    trigger,
-  } = useForm<ProjectForm>({
+  const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
     defaultValues: {
+      title: '',
+      description: '',
+      category: '',
+      budget: {
+        total: 0,
+        type: 'fixed'
+      },
+      timeline: {
+        deadline: '',
+        expectedDuration: 30
+      },
+      milestones: {
+        expected: 1
+      },
       skills: [],
-      experienceLevel: 'intermediate',
-      projectType: 'fixed',
+      requirements: {
+        experience: 'intermediate',
+        deliverables: []
+      }
+    }
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest('POST', '/api/projects', data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard/stats'] });
+      toast({
+        title: "Project Created Successfully!",
+        description: "Your project has been posted and is now visible to freelancers.",
+      });
+      setLocation(`/projects/${data.id}`);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Create Project",
+        description: error.message || "Please check your input and try again.",
+        variant: "destructive",
+      });
     },
   });
 
+  const onSubmit = (data: ProjectFormData) => {
+    // Add skills and deliverables to the form data
+    const projectData = {
+      ...data,
+      skills,
+      requirements: {
+        ...data.requirements,
+        deliverables
+      }
+    };
+
+    createProjectMutation.mutate(projectData);
+  };
+
+  const addSkill = () => {
+    if (skillInput.trim() && !skills.includes(skillInput.trim())) {
+      setSkills([...skills, skillInput.trim()]);
+      setSkillInput('');
+      form.setValue('skills', [...skills, skillInput.trim()]);
+    }
+  };
+
+  const removeSkill = (skillToRemove: string) => {
+    const updatedSkills = skills.filter(skill => skill !== skillToRemove);
+    setSkills(updatedSkills);
+    form.setValue('skills', updatedSkills);
+  };
+
+  const addDeliverable = () => {
+    if (deliverableInput.trim() && !deliverables.includes(deliverableInput.trim())) {
+      setDeliverables([...deliverables, deliverableInput.trim()]);
+      setDeliverableInput('');
+    }
+  };
+
+  const removeDeliverable = (deliverableToRemove: string) => {
+    setDeliverables(deliverables.filter(deliverable => deliverable !== deliverableToRemove));
+  };
+
   const categories = [
-    'Web Development',
-    'Mobile Development',
-    'Blockchain Development',
-    'UI/UX Design',
-    'Data Science',
-    'DevOps',
-    'Content Writing',
-    'Digital Marketing',
-    'Other',
+    'Development',
+    'Design', 
+    'Writing',
+    'Marketing',
+    'Consulting',
+    'Other'
   ];
 
-  const popularSkills = [
-    'React', 'Node.js', 'Python', 'JavaScript', 'TypeScript',
-    'Blockchain', 'Smart Contracts', 'Solidity', 'Web3',
-    'UI/UX Design', 'Figma', 'Adobe Creative Suite',
-    'Machine Learning', 'Data Analytics', 'AI',
-    'AWS', 'Docker', 'Kubernetes', 'DevOps',
+  const experienceLevels = [
+    { value: 'beginner', label: 'Beginner' },
+    { value: 'intermediate', label: 'Intermediate' },
+    { value: 'expert', label: 'Expert' }
   ];
 
-  const budgetMin = watch('budgetMin');
-  const budgetMax = watch('budgetMax');
-
-  const addSkill = (skill: string) => {
-    if (skill && !selectedSkills.includes(skill)) {
-      const newSkills = [...selectedSkills, skill];
-      setSelectedSkills(newSkills);
-      setValue('skills', newSkills);
-    }
-  };
-
-  const removeSkill = (skill: string) => {
-    const newSkills = selectedSkills.filter(s => s !== skill);
-    setSelectedSkills(newSkills);
-    setValue('skills', newSkills);
-  };
-
-  const addCustomSkill = () => {
-    if (customSkill.trim()) {
-      addSkill(customSkill.trim());
-      setCustomSkill('');
-    }
-  };
-
-  const addMilestone = () => {
-    setMilestones([...milestones, { title: '', amount: 0, description: '', duration: '' }]);
-  };
-
-  const removeMilestone = (index: number) => {
-    setMilestones(milestones.filter((_, i) => i !== index));
-  };
-
-  const updateMilestone = (index: number, field: string, value: string | number) => {
-    const updated = milestones.map((milestone, i) => 
-      i === index ? { ...milestone, [field]: value } : milestone
+  // Redirect if not a client
+  if (user?.role !== 'client') {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card>
+          <CardContent className="text-center py-8">
+            <h3 className="text-lg font-semibold text-foreground mb-2">Client Account Required</h3>
+            <p className="text-muted-foreground">
+              Only clients can post projects. Please switch to a client account to continue.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     );
-    setMilestones(updated);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setAttachments([...attachments, ...files]);
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachments(attachments.filter((_, i) => i !== index));
-  };
-
-  const nextStep = async () => {
-    const isValid = await trigger();
-    if (isValid) {
-      setStep(step + 1);
-    }
-  };
-
-  const prevStep = () => {
-    setStep(step - 1);
-  };
-
-  const onSubmit = async (data: ProjectForm) => {
-    try {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      console.log('Project created:', {
-        ...data,
-        milestones,
-        attachments,
-      });
-
-      toast.success('Project created successfully!');
-      navigate('/dashboard');
-    } catch (error) {
-      toast.error('Failed to create project');
-    }
-  };
-
-  const totalMilestoneAmount = milestones.reduce((sum, milestone) => sum + milestone.amount, 0);
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="inline-flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Dashboard
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Create New Project</h1>
-            <p className="text-gray-600">Step {step} of 3</p>
-          </div>
+    <div className="container mx-auto px-4 py-8 max-w-4xl" data-testid="create-project-container">
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-foreground" data-testid="text-create-project-title">
+            Post a New Project
+          </h1>
+          <p className="text-muted-foreground" data-testid="text-create-project-description">
+            Find the perfect freelancer for your Web3 project
+          </p>
         </div>
-      </div>
 
-      {/* Progress Bar */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center ${step >= 1 ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-              step >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200'
-            }`}>
-              1
-            </div>
-            <span className="ml-2 font-medium">Project Details</span>
-          </div>
-          <div className={`flex items-center ${step >= 2 ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-              step >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200'
-            }`}>
-              2
-            </div>
-            <span className="ml-2 font-medium">Budget & Timeline</span>
-          </div>
-          <div className={`flex items-center ${step >= 3 ? 'text-blue-600' : 'text-gray-400'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold ${
-              step >= 3 ? 'bg-blue-600 text-white' : 'bg-gray-200'
-            }`}>
-              3
-            </div>
-            <span className="ml-2 font-medium">Review & Submit</span>
-          </div>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${(step / 3) * 100}%` }}
-          ></div>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Step 1: Project Details */}
-        {step === 1 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Project Details</h2>
-
-            {/* Project Title */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Project Title *
-              </label>
-              <input
-                {...register('title')}
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., Build a modern e-commerce website with React"
-              />
-              {errors.title && (
-                <p className="mt-1 text-red-600 text-sm">{errors.title.message}</p>
-              )}
-            </div>
-
-            {/* Category */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Category *
-              </label>
-              <select
-                {...register('category')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Select a category</option>
-                {categories.map(category => (
-                  <option key={category} value={category.toLowerCase().replace(' ', '-')}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-              {errors.category && (
-                <p className="mt-1 text-red-600 text-sm">{errors.category.message}</p>
-              )}
-            </div>
-
-            {/* Project Description */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Project Description *
-              </label>
-              <textarea
-                {...register('description')}
-                rows={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Describe your project in detail. Include requirements, goals, and any specific features you need..."
-              />
-              {errors.description && (
-                <p className="mt-1 text-red-600 text-sm">{errors.description.message}</p>
-              )}
-            </div>
-
-            {/* Skills Required */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Skills Required *
-              </label>
-              
-              {/* Selected Skills */}
-              {selectedSkills.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedSkills.map(skill => (
-                    <span
-                      key={skill}
-                      className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                    >
-                      {skill}
-                      <button
-                        type="button"
-                        onClick={() => removeSkill(skill)}
-                        className="ml-1 p-0.5 hover:bg-blue-200 rounded-full"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Popular Skills */}
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2">Popular Skills:</p>
-                <div className="flex flex-wrap gap-2">
-                  {popularSkills.map(skill => (
-                    <button
-                      key={skill}
-                      type="button"
-                      onClick={() => addSkill(skill)}
-                      disabled={selectedSkills.includes(skill)}
-                      className={`px-3 py-1 text-sm rounded-full border transition-colors ${
-                        selectedSkills.includes(skill)
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      {skill}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Skill Input */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  value={customSkill}
-                  onChange={(e) => setCustomSkill(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomSkill())}
-                  placeholder="Add a custom skill..."
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          {/* Basic Information */}
+          <Card data-testid="card-basic-info">
+            <CardHeader>
+              <CardTitle>Basic Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Project Title *</label>
+                <Input
+                  placeholder="e.g., Build a DeFi Dashboard with React and Web3"
+                  {...form.register('title')}
+                  className="mt-1"
+                  data-testid="input-project-title"
                 />
-                <button
-                  type="button"
-                  onClick={addCustomSkill}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  Add
-                </button>
-              </div>
-
-              {errors.skills && (
-                <p className="mt-1 text-red-600 text-sm">{errors.skills.message}</p>
-              )}
-            </div>
-
-            {/* Experience Level */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Experience Level Required
-              </label>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { value: 'entry', label: 'Entry Level', desc: 'New to this field' },
-                  { value: 'intermediate', label: 'Intermediate', desc: '2-5 years experience' },
-                  { value: 'expert', label: 'Expert', desc: '5+ years experience' },
-                ].map(level => (
-                  <label key={level.value} className="cursor-pointer">
-                    <input
-                      {...register('experienceLevel')}
-                      type="radio"
-                      value={level.value}
-                      className="sr-only"
-                    />
-                    <div className={`p-4 border rounded-lg text-center transition-colors ${
-                      watch('experienceLevel') === level.value
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}>
-                      <div className="font-medium text-gray-900">{level.label}</div>
-                      <div className="text-sm text-gray-500">{level.desc}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={nextStep}
-                className="inline-flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Next Step
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Budget & Timeline */}
-        {step === 2 && (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Budget & Timeline</h2>
-
-            {/* Project Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Project Type
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { value: 'fixed', label: 'Fixed Price', desc: 'Pay a fixed amount for the entire project' },
-                  { value: 'hourly', label: 'Hourly Rate', desc: 'Pay per hour of work completed' },
-                ].map(type => (
-                  <label key={type.value} className="cursor-pointer">
-                    <input
-                      {...register('projectType')}
-                      type="radio"
-                      value={type.value}
-                      className="sr-only"
-                    />
-                    <div className={`p-4 border rounded-lg transition-colors ${
-                      watch('projectType') === type.value
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-300 hover:border-gray-400'
-                    }`}>
-                      <div className="font-medium text-gray-900">{type.label}</div>
-                      <div className="text-sm text-gray-500">{type.desc}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Budget Range */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Budget Range (USD) *
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Minimum Budget</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input
-                      {...register('budgetMin', { valueAsNumber: true })}
-                      type="number"
-                      min="100"
-                      step="100"
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="1000"
-                    />
-                  </div>
-                  {errors.budgetMin && (
-                    <p className="mt-1 text-red-600 text-sm">{errors.budgetMin.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Maximum Budget</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <input
-                      {...register('budgetMax', { valueAsNumber: true })}
-                      type="number"
-                      min="100"
-                      step="100"
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="5000"
-                    />
-                  </div>
-                  {errors.budgetMax && (
-                    <p className="mt-1 text-red-600 text-sm">{errors.budgetMax.message}</p>
-                  )}
-                </div>
-              </div>
-              {budgetMin && budgetMax && budgetMax <= budgetMin && (
-                <p className="mt-1 text-red-600 text-sm">Maximum budget must be greater than minimum budget</p>
-              )}
-            </div>
-
-            {/* Timeline */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Expected Timeline *
-              </label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  {...register('timeline')}
-                  type="text"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="e.g., 2-3 months, 6 weeks, 1 month"
-                />
-              </div>
-              {errors.timeline && (
-                <p className="mt-1 text-red-600 text-sm">{errors.timeline.message}</p>
-              )}
-            </div>
-
-            {/* Milestones */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <label className="text-sm font-medium text-gray-700">
-                  Project Milestones (Optional)
-                </label>
-                <button
-                  type="button"
-                  onClick={addMilestone}
-                  className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Milestone
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                {milestones.map((milestone, index) => (
-                  <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium text-gray-900">Milestone {index + 1}</h4>
-                      {milestones.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeMilestone(index)}
-                          className="p-1 text-red-600 hover:text-red-800 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-                      <input
-                        type="text"
-                        placeholder="Milestone title"
-                        value={milestone.title}
-                        onChange={(e) => updateMilestone(index, 'title', e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Amount ($)"
-                        value={milestone.amount || ''}
-                        onChange={(e) => updateMilestone(index, 'amount', parseFloat(e.target.value) || 0)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <textarea
-                        placeholder="Milestone description"
-                        value={milestone.description}
-                        onChange={(e) => updateMilestone(index, 'description', e.target.value)}
-                        rows={2}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Duration (e.g., 1 week)"
-                        value={milestone.duration}
-                        onChange={(e) => updateMilestone(index, 'duration', e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-                ))}
-                
-                {totalMilestoneAmount > 0 && (
-                  <div className="text-right">
-                    <span className="text-sm text-gray-600">
-                      Total Milestone Amount: <span className="font-medium text-gray-900">${totalMilestoneAmount}</span>
-                    </span>
-                  </div>
+                {form.formState.errors.title && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.title.message}</p>
                 )}
               </div>
-            </div>
 
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={prevStep}
-                className="inline-flex items-center px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={nextStep}
-                className="inline-flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Next Step
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Review & Submit */}
-        {step === 3 && (
-          <div className="space-y-6">
-            {/* File Attachments */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Project Attachments (Optional)</h3>
-              
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center mb-4">
-                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-600 mb-2">Upload project requirements, mockups, or reference files</p>
-                <input
-                  type="file"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label
-                  htmlFor="file-upload"
-                  className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors cursor-pointer"
-                >
-                  Choose Files
-                </label>
+              <div>
+                <label className="text-sm font-medium text-foreground">Category *</label>
+                <Select onValueChange={(value) => form.setValue('category', value)} data-testid="select-project-category">
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.formState.errors.category && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.category.message}</p>
+                )}
               </div>
 
-              {attachments.length > 0 && (
+              <div>
+                <label className="text-sm font-medium text-foreground">Project Description *</label>
+                <Textarea
+                  placeholder="Describe your project in detail. Include what you want to build, specific requirements, and any important information freelancers should know."
+                  {...form.register('description')}
+                  className="mt-1"
+                  rows={6}
+                  data-testid="textarea-project-description"
+                />
+                {form.formState.errors.description && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.description.message}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Budget and Timeline */}
+          <Card data-testid="card-budget-timeline">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <DollarSign className="w-5 h-5 mr-2" />
+                Budget & Timeline
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">Budget Type *</label>
+                  <Select 
+                    onValueChange={(value: 'fixed' | 'hourly') => form.setValue('budget.type', value)}
+                    defaultValue="fixed"
+                    data-testid="select-budget-type"
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select budget type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed">Fixed Price</SelectItem>
+                      <SelectItem value="hourly">Hourly Rate</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-foreground">Total Budget ($) *</label>
+                  <Input
+                    type="number"
+                    placeholder="5000"
+                    {...form.register('budget.total', { valueAsNumber: true })}
+                    className="mt-1"
+                    data-testid="input-project-budget"
+                  />
+                  {form.formState.errors.budget?.total && (
+                    <p className="text-sm text-destructive mt-1">{form.formState.errors.budget.total.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-foreground">Project Deadline *</label>
+                  <Input
+                    type="date"
+                    {...form.register('timeline.deadline')}
+                    className="mt-1"
+                    min={new Date().toISOString().split('T')[0]}
+                    data-testid="input-project-deadline"
+                  />
+                  {form.formState.errors.timeline?.deadline && (
+                    <p className="text-sm text-destructive mt-1">{form.formState.errors.timeline.deadline.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-foreground">Expected Duration (days)</label>
+                  <Input
+                    type="number"
+                    placeholder="30"
+                    {...form.register('timeline.expectedDuration', { valueAsNumber: true })}
+                    className="mt-1"
+                    data-testid="input-expected-duration"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Number of Milestones *</label>
+                <Input
+                  type="number"
+                  placeholder="3"
+                  min="1"
+                  {...form.register('milestones.expected', { valueAsNumber: true })}
+                  className="mt-1"
+                  data-testid="input-milestone-count"
+                />
+                {form.formState.errors.milestones?.expected && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.milestones.expected.message}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Skills Required */}
+          <Card data-testid="card-skills-required">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Tag className="w-5 h-5 mr-2" />
+                Skills Required
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Add Skills *</label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    placeholder="e.g., React, Solidity, Web3.js"
+                    value={skillInput}
+                    onChange={(e) => setSkillInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
+                    data-testid="input-skill"
+                  />
+                  <Button type="button" onClick={addSkill} data-testid="button-add-skill">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+                {form.formState.errors.skills && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.skills.message}</p>
+                )}
+              </div>
+
+              {skills.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {skills.map((skill, index) => (
+                    <Badge key={index} variant="secondary" className="flex items-center gap-1" data-testid={`badge-skill-${index}`}>
+                      {skill}
+                      <X 
+                        className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                        onClick={() => removeSkill(skill)}
+                      />
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Requirements */}
+          <Card data-testid="card-requirements">
+            <CardHeader>
+              <CardTitle>Requirements</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-foreground">Experience Level</label>
+                <Select 
+                  onValueChange={(value) => form.setValue('requirements.experience', value)}
+                  defaultValue="intermediate"
+                  data-testid="select-experience-level"
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select experience level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {experienceLevels.map((level) => (
+                      <SelectItem key={level.value} value={level.value}>
+                        {level.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-foreground">Deliverables</label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    placeholder="e.g., Responsive website, Smart contract code, Documentation"
+                    value={deliverableInput}
+                    onChange={(e) => setDeliverableInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addDeliverable())}
+                    data-testid="input-deliverable"
+                  />
+                  <Button type="button" onClick={addDeliverable} data-testid="button-add-deliverable">
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {deliverables.length > 0 && (
                 <div className="space-y-2">
-                  {attachments.map((file, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-gray-700">{file.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeAttachment(index)}
-                        className="p-1 text-red-600 hover:text-red-800 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                  {deliverables.map((deliverable, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded" data-testid={`deliverable-item-${index}`}>
+                      <span className="text-sm">{deliverable}</span>
+                      <X 
+                        className="w-4 h-4 cursor-pointer hover:text-destructive" 
+                        onClick={() => removeDeliverable(deliverable)}
+                      />
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Project Summary */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Project Summary</h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium text-gray-900">Project Title</h4>
-                  <p className="text-gray-700">{watch('title') || 'Not specified'}</p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-900">Category</h4>
-                  <p className="text-gray-700">{watch('category') || 'Not specified'}</p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-900">Budget Range</h4>
-                  <p className="text-gray-700">
-                    ${watch('budgetMin') || 0} - ${watch('budgetMax') || 0}
-                  </p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-900">Timeline</h4>
-                  <p className="text-gray-700">{watch('timeline') || 'Not specified'}</p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-gray-900">Skills Required</h4>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {selectedSkills.map(skill => (
-                      <span
-                        key={skill}
-                        className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between">
-              <button
-                type="button"
-                onClick={prevStep}
-                className="inline-flex items-center px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Previous
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? 'Creating Project...' : 'Create Project'}
-                <Users className="w-4 h-4 ml-2" />
-              </button>
-            </div>
+          {/* Submit */}
+          <div className="flex justify-end space-x-4">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setLocation('/dashboard')}
+              data-testid="button-cancel"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={createProjectMutation.isPending}
+              className="bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90"
+              data-testid="button-post-project"
+            >
+              {createProjectMutation.isPending ? 'Posting...' : 'Post Project'}
+            </Button>
           </div>
-        )}
-      </form>
+        </form>
+      </div>
     </div>
   );
-};
+}
