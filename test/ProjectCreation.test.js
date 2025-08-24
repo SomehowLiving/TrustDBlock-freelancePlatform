@@ -1,4 +1,5 @@
 const { expect } = require("chai");
+const { MaxUint256 } = require("ethers");
 const { deployContracts, PROJECT_BUDGET } = require("./helpers/setup");
 
 describe("Project Creation", function () {
@@ -57,4 +58,66 @@ describe("Project Creation", function () {
       freelancePlatform.connect(otherUser).createProject(PROJECT_BUDGET, 3, "QmTestHash", 7)
     ).to.be.revertedWith("Only clients allowed");
   });
+
+  //-----------------------Additional Tests-----------------------
+  it("Should set correct application deadline", async function () {
+  const now = (await ethers.provider.getBlock("latest")).timestamp;
+  const tx = await freelancePlatform.connect(client).createProject(
+    PROJECT_BUDGET,
+    3,
+    "QmDeadlineHash",
+    10
+  );
+  await tx.wait();
+
+  const project = await freelancePlatform.getProject(1);
+  expect(project.applicationDeadline).to.be.closeTo(now + 10 * 24 * 60 * 60, 5);
+});
+
+it("Should default milestones to 1 if zero is passed", async function () {
+  await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 0, "QmTestHash", 7);
+  const project = await freelancePlatform.getProject(1);
+  expect(project.totalMilestones).to.equal(1);
+});
+
+it("Should initialize escrow balance to zero", async function () {
+  await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 3, "QmHash", 7);
+  const project = await freelancePlatform.getProject(1);
+  expect(project.escrowBalance).to.equal(0);
+});
+
+it("Should allow zero-day application period but deadline == createdAt", async function () {
+  const now = (await ethers.provider.getBlock("latest")).timestamp;
+  const tx = await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 3, "QmTestHash", 0);
+  await tx.wait();
+
+  const project = await freelancePlatform.getProject(1);
+  expect(project.applicationDeadline).to.be.closeTo(now, 2); // allow 2s drift
+});
+
+it("Should handle very large budget safely", async function () {
+  const hugeBudget = MaxUint256;
+  await expect(
+    freelancePlatform.connect(client).createProject(hugeBudget, 1, "QmHash", 7)
+  ).to.not.be.reverted;
+});
+
+it("Should emit ProjectCreated with correct args", async function () {
+  const tx = await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 3, "QmMeta", 7);
+  await expect(tx).to.emit(freelancePlatform, "ProjectCreated")
+    .withArgs(1, client.address, PROJECT_BUDGET);
+});
+
+it("Should create sequential IDs across multiple clients", async function () {
+  await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 3, "Qm1", 7);
+  await userRegistry.connect(otherUser).selfRegister("Client", "QmOther");
+  await freelancePlatform.connect(otherUser).createProject(PROJECT_BUDGET, 3, "Qm2", 7);
+
+  const project1 = await freelancePlatform.getProject(1);
+  const project2 = await freelancePlatform.getProject(2);
+  expect(project1.id).to.equal(1);
+  expect(project2.id).to.equal(2);
+});
+
+
 });
