@@ -11,6 +11,8 @@ interface IUserRegistry {
     function hasRole(address wallet, string memory role) external view returns (bool);
     // function isUserActive(address wallet) external view returns (bool);
     function isUserRegistered(address wallet) external view returns (bool);
+    function isUserActive(address wallet) external view returns (bool);
+
 }
 
 /**
@@ -214,6 +216,15 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         _;
     }
     
+    //---------TO CHECK IF THE PERSON APPLYING IS ACTIVE USER OR NOT
+    modifier onlyActiveUser() {
+        require(
+            userRegistry.isUserActive(msg.sender),
+            "User is inactive"
+        );
+        _;
+    }
+
     // ========== CONSTRUCTOR ==========
     constructor(address _userRegistryAddress) Ownable(msg.sender) {
         require(_userRegistryAddress != address(0), "Invalid UserRegistry address");
@@ -270,8 +281,8 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         if (msg.value == 0) revert ZeroAmount();
         if (msg.value < project.totalBudget) revert InvalidAmount();
         if (project.freelancer != address(0)) revert("Project already has freelancer");
-        require(project.status == ProjectStatus.Draft, "Invalid project status");
         require(project.escrowBalance == 0, "Already funded");
+        require(project.status == ProjectStatus.Draft, "Invalid project status");
         
         // Calculate platform fee
         uint256 platformFee = (msg.value * platformFeePercent) / 10000;
@@ -292,11 +303,12 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
     }
     
     // ========== APPLICATION & SELECTION PROCESS ==========
-    
+    // Replaced onlyRegisteredUser(msg.sender) with onlyActiveUser
+        // Now the function checks both registration and active status automatically.
     function applyForProject(uint256 _projectId, string calldata _proposalHash) 
         external 
         projectExists(_projectId) 
-        onlyRegisteredUser(msg.sender)
+        onlyActiveUser 
     {
         Project storage project = projects[_projectId];
         require(project.status == ProjectStatus.Open, "Applications not open");
@@ -337,7 +349,8 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         Project storage project = projects[_projectId];
         if (_freelancer == address(0)) revert InvalidAddress();
         if (project.freelancer != address(0)) revert FreelancerAlreadySelected();
-        if (project.escrowBalance < project.totalBudget) revert ProjectNotFunded();
+        // if (project.escrowBalance < project.totalBudget) revert ProjectNotFunded();
+        if (project.status == ProjectStatus.Draft || project.escrowBalance == 0) revert ProjectNotFunded();
         
         if (project.status == ProjectStatus.Selecting) {
             require(isShortlisted[_projectId][_freelancer], "Freelancer not shortlisted");
@@ -491,8 +504,10 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         project.escrowBalance -= milestone.amount;
         project.completedMilestones++;
         
-        // Update reputation and statistics
-        _updateFreelancerReputation(project.freelancer, milestone.amount);
+        // Update reputation and statistics--issue since called multiple times
+        // _updateFreelancerReputation(project.freelancer, milestone.amount);
+        reputations[project.freelancer].totalEarned += milestone.amount;
+    
         totalVolumeProcessed += milestone.amount;
         totalFeesCollected += freelancerFee;
         
@@ -602,24 +617,31 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
     // ========== CANCELLATION SYSTEM ==========
     
     function autoCancelMilestone(uint256 _milestoneId) 
-        external 
+        external nonReentrant
         projectExists(milestones[_milestoneId].projectId)
         milestoneExists(_milestoneId)
     {
         Milestone storage milestone = milestones[_milestoneId];
         require(milestone.status == MilestoneStatus.Pending, "Milestone already submitted");
         require(block.timestamp >= milestone.deadline + FINAL_SUBMISSION_END_BUFFER, "Not eligible for auto cancellation");
+        
         uint256 projectId = milestone.projectId; 
-        _cancelMilestone(_milestoneId);
+        
+        // Do cancellation logic directly without calling _cancelMilestone
+        payable(projects[projectId].client).transfer(milestone.amount);
+        pendingAmounts[projectId] -= milestone.amount;
+        projects[projectId].escrowBalance -= milestone.amount;
+        milestone.status = MilestoneStatus.Cancelled;
         emit MilestoneAutoCancelled(_milestoneId, projectId);
     }
 
     function requestMilestoneCancellation(uint256 _milestoneId) 
-        external
+        external nonReentrant
         milestoneExists(_milestoneId)
     {
         uint256 projId = milestones[_milestoneId].projectId;
         require(projId > 0 && projId <= projectCounter, "Project does not exist");
+        
         if (msg.sender == projects[projId].client) {
             clientCancellationRequest[_milestoneId] = true;
         } else if (msg.sender == projects[projId].freelancer) {
@@ -627,12 +649,13 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         } else {
             revert UnauthorizedCaller();
         }
+        
         if (clientCancellationRequest[_milestoneId] && freelancerCancellationRequest[_milestoneId]) {
             _cancelMilestone(_milestoneId);
         }
     }
 
-    function _cancelMilestone(uint256 _milestoneId) internal nonReentrant {
+    function _cancelMilestone(uint256 _milestoneId) internal { // Removed nonReentrant since is marked nonReentrant but called from another nonReentrant function 
         Milestone storage milestone = milestones[_milestoneId];
         uint256 projId = milestone.projectId;
         if (milestone.status != MilestoneStatus.Paid) {
@@ -766,7 +789,9 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         
         projects[_projectId].status = ProjectStatus.Completed;
         totalProjectsCompleted++;
-        
+        // Update project completion count here (once per project)
+        reputations[projects[_projectId].freelancer].projectsCompleted++;
+    
         emit ProjectCompleted(_projectId, projects[_projectId].freelancer);
     }
     
@@ -1103,3 +1128,11 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
     }
 
 }
+
+
+// For Better UX:
+
+// Deploy on L2/Sidechain - Reduce gas by 95%
+// Batch Transactions - Combine milestone approval + payment
+// Gas Sponsorship - Platform covers gas for small projects
+// Minimum Project Size - Only viable for $500+ projects on mainnet
