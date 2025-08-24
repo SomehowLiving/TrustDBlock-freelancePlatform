@@ -1,82 +1,36 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { deployContracts, PROJECT_BUDGET, MILESTONE_AMOUNT, FREELANCER_FEE } = require("./helpers/setup");
 
-describe("FreelancePlatform", function () {
+describe("Dispute System", function () {
     let freelancePlatform;
     let userRegistry;
     let owner, client, freelancer, admin, otherUser;
-    
-    // Test constants
-    const PLATFORM_FEE = 300; // 3%
-    const FREELANCER_FEE = 250; // 2.5%
-    const PROJECT_BUDGET = ethers.parseEther("1.0");
-    const MILESTONE_AMOUNT = ethers.parseEther("0.5");
-    
-    beforeEach(async function () {
-        [owner, client, freelancer, admin, otherUser] = await ethers.getSigners();
-        
-        // Deploy UserRegistry first
-        const UserRegistry = await ethers.getContractFactory("UserRegistry");
-        userRegistry = await UserRegistry.deploy();
-        
-        // Deploy FreelancePlatform
-        const FreelancePlatform = await ethers.getContractFactory("FreelancePlatform");
-        freelancePlatform = await FreelancePlatform.deploy(userRegistry.target);
-        
-        // Authorize the FreelancePlatform contract to check user roles
-        await userRegistry.authorizeContract(freelancePlatform.target);
-        
-        // Setup user roles
-        await userRegistry.connect(client).selfRegister("Client", "QmClientHash");
-        await userRegistry.connect(freelancer).selfRegister("Freelancer", "QmFreelancerHash");
-    });
-
-    describe("Deployment", function () {
-        it("Should set the right owner", async function () {
-            expect(await freelancePlatform.owner()).to.equal(owner.address);
-        });
-
-        it("Should set the UserRegistry address", async function () {
-            expect(await freelancePlatform.userRegistry()).to.equal(userRegistry.target);
-        });
-
-        it("Should initialize with correct default fees", async function () {
-            expect(await freelancePlatform.platformFeePercent()).to.equal(PLATFORM_FEE);
-            expect(await freelancePlatform.freelancerFeePercent()).to.equal(FREELANCER_FEE);
-        });
-
-        it("Should revert with invalid UserRegistry address", async function () {
-            const FreelancePlatform = await ethers.getContractFactory("FreelancePlatform");
-            await expect(
-                FreelancePlatform.deploy(ethers.ZeroAddress)
-            ).to.be.revertedWith("Invalid UserRegistry address");
-        });
-    });
-
-    describe("Dispute System", function () {
-        let projectId, milestoneId;
 
         beforeEach(async function () {
+            ({ freelancePlatform, userRegistry, client, freelancer, owner, otherUser, freshUser } = await deployContracts());
             await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 1, "QmTestHash", 7);
             projectId = 1;
             await freelancePlatform.connect(client).depositFunds(projectId, { value: PROJECT_BUDGET });
             await freelancePlatform.connect(freelancer).applyForProject(projectId, "QmProposalHash");
             await freelancePlatform.connect(client).selectFreelancer(projectId, freelancer.address);
             await freelancePlatform.connect(freelancer).acceptProject(projectId);
-            
+
             const amounts = [MILESTONE_AMOUNT];
-            const deadlines = [Math.floor(Date.now() / 1000) + 86400 * 7 +3600];
+
+            // Use blockchain time for deadline
+            const latestBlock = await ethers.provider.getBlock("latest");
+            const deadlines = [latestBlock.timestamp + 86400 * 7 + 3600]; // 7 days + 1h
             const metadataHashes = ["QmMilestone1"];
-            
+
             await freelancePlatform.connect(client).agreeMilestones(
                 projectId,
                 amounts,
                 deadlines,
                 metadataHashes
             );
-            
+
             milestoneId = 1;
-            
+
             await freelancePlatform.connect(freelancer).submitMilestoneWork(
                 milestoneId,
                 "QmDeliveryHash",
@@ -145,25 +99,37 @@ describe("FreelancePlatform", function () {
         });
 
         it("Should revert if milestone not submitted", async function () {
-            // Create new milestone that's not submitted
+            // Create a new project for this test
+            await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 1, "QmTestHash2", 7);
+            const newProjectId = 2;
+            await freelancePlatform.connect(client).depositFunds(newProjectId, { value: PROJECT_BUDGET });
+            await freelancePlatform.connect(freelancer).applyForProject(newProjectId, "QmProposalHash2");
+            await freelancePlatform.connect(client).selectFreelancer(newProjectId, freelancer.address);
+            await freelancePlatform.connect(freelancer).acceptProject(newProjectId);
+
             const amounts = [MILESTONE_AMOUNT];
-            const deadlines = [Math.floor(Date.now() / 1000) + 86400 * 7 +3600];
+
+            // Blockchain-based deadline
+            const latestBlock = await ethers.provider.getBlock("latest");
+            const deadlines = [latestBlock.timestamp + 86400 * 7 + 3600];
             const metadataHashes = ["QmMilestone2"];
-            
+
             await freelancePlatform.connect(client).agreeMilestones(
-                projectId,
+                newProjectId,
                 amounts,
                 deadlines,
                 metadataHashes
             );
 
+            const newMilestoneId = 2; // This would be the second milestone created
+
             await expect(
-                freelancePlatform.connect(client).disputeMilestone(2)
+                freelancePlatform.connect(client).disputeMilestone(newMilestoneId)
             ).to.be.revertedWith("Milestone not in submitted state");
         });
 
         it("Should revert if dispute window expired", async function () {
-            // Move time past dispute window
+            // Move time forward past dispute window
             await ethers.provider.send("evm_increaseTime", [86400 * 15]); // 15 days
             await ethers.provider.send("evm_mine");
 
@@ -172,4 +138,3 @@ describe("FreelancePlatform", function () {
             ).to.be.revertedWith("Dispute window expired");
         });
     });
-});

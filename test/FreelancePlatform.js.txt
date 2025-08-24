@@ -53,7 +53,8 @@ describe("FreelancePlatform", function () {
         });
     });
 
-    describe("Project Creation", function () {
+
+describe("Project Creation", function () {
         it("Should create a project successfully", async function () {
             const tx = await freelancePlatform.connect(client).createProject(
                 PROJECT_BUDGET,

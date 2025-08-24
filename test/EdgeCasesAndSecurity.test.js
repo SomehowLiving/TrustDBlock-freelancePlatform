@@ -2,7 +2,16 @@ const { expect } = require("chai");
 const { deployContracts, PROJECT_BUDGET } = require("./helpers/setup");
 
 describe("Edge Cases and Security", function () {
-    let freelancePlatform, userRegistry, client, freelancer, otherUser, freshUser;
+    let freelancePlatform, userRegistry;
+    let owner, client, freelancer, otherUser, freshUser;
+
+    beforeEach(async function () {
+        // Get test accounts
+        [owner, client, freelancer, otherUser, freshUser] = await ethers.getSigners();
+
+        // Deploy contracts with helper
+        ({ freelancePlatform, userRegistry } = await deployContracts(owner));
+    });
 
         it("Should revert with invalid project ID", async function () {
             await expect(

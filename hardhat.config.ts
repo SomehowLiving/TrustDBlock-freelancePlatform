@@ -24,7 +24,7 @@ const config: HardhatUserConfig = {
       timeout: 1000000, // 👈 Increase timeout (default is 4000ms)
     },
     sepolia: {
-      url: `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+      url: `https://blockchain.googleapis.com/v1/projects/snap-anime/locations/asia-east1/endpoints/ethereum-sepolia/rpc?key=${process.env.API_KEY}`,
       accounts: [`0x${process.env.SEPOLIA_PRIVATE_KEY}`],
       // accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },

@@ -1,8 +1,17 @@
 const { expect } = require("chai");
-const { deployContracts, PROJECT_BUDGET } = require("./helpers/setup");
+const { deployContracts, PROJECT_BUDGET, MILESTONE_AMOUNT, FREELANCER_FEE } = require("./helpers/setup");
 
     describe("UserRegistry Integration", function () {
-        it("Should properly check user roles", async function () {
+    let projectId, milestoneId;
+    let freelancePlatform;
+    let userRegistry;
+    let owner, client, freelancer, admin, otherUser;
+
+    beforeEach(async function () {
+        ({ freelancePlatform, userRegistry, client, freelancer, owner, otherUser, freshUser } = await deployContracts());
+    });
+    
+    it("Should properly check user roles", async function () {
             // Test that only registered users can create projects
             await expect(
                 freelancePlatform.connect(otherUser).createProject(PROJECT_BUDGET, 1, "QmTestHash", 7)
@@ -25,9 +34,13 @@ const { deployContracts, PROJECT_BUDGET } = require("./helpers/setup");
             // Deactivate freelancer
             await userRegistry.connect(owner).deactivateUser(freelancer.address);
 
-            // Should not be able to apply
+            // Check that the user is inactive via getUserProfile
+            const profile = await userRegistry.getUserProfile(freelancer.address);
+            expect(profile.isActive).to.equal(false);
+
+            // Applying for a project should fail with a custom revert (if applied)
             await expect(
                 freelancePlatform.connect(freelancer).applyForProject(1, "QmProposalHash")
-            ).to.be.revertedWith("User not registered");
+            ).to.be.revertedWith("User is inactive"); // update the revert reason in your contract
         });
     });
