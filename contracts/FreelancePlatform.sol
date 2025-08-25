@@ -627,8 +627,8 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
         require( project.status == ProjectStatus.Active, "Project is not active" );
 
         Milestone storage milestone = milestones[_milestoneId];
-        require(block.timestamp <= milestone.deadline + SUBMISSION_END_BUFFER - EXTENSION_REQUEST_CUTOFF_BUFFER,
-            "Cannot request extension within last 48 hours of grace period"
+        require(block.timestamp <= milestone.deadline - EXTENSION_REQUEST_CUTOFF_BUFFER,
+            "Cannot request extension within last 48 hours of milestone deadline"
         );
         require( _newDeadline > milestone.deadline,
             "New deadline must be later than current deadline"
@@ -785,8 +785,7 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
 
                 payable(projects[projectId].freelancer).transfer(netAmount);
                 if (freelancerFee > 0) {
-                    (bool feeSent, ) = owner().call{value: freelancerFee}("");
-                    require(feeSent, "Fee transfer failed");
+                    payable(owner()).transfer(freelancerFee);
                 }
 
                 milestones[_milestoneId].status = MilestoneStatus.Paid;
@@ -796,13 +795,12 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
                 totalFeesCollected += freelancerFee;
             }
         } else if (_winner == projects[projectId].client) {
-            (bool refunded, ) = payable(project.client).call{value: _disputedAmount}("");
-            require(refunded, "Refund failed");
+            payable(projects[projectId].client).transfer(_disputedAmount);
             milestones[_milestoneId].status = MilestoneStatus.Refunded;
         }
 
-        pendingAmounts[projectId] -= milestones[_milestoneId].amount;
-        projects[projectId].escrowBalance -= milestones[_milestoneId].amount;
+        pendingAmounts[projectId] -= _disputedAmount;
+        projects[projectId].escrowBalance -= _disputedAmount;
         projects[projectId].completedMilestones++;
 
         if (
