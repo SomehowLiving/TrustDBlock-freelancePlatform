@@ -280,7 +280,7 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
         
         if (msg.value == 0) revert ZeroAmount();
         if (msg.value < project.totalBudget) revert InvalidAmount();
-        if (project.freelancer != address(0)) revert("Project already has freelancer");
+        if (project.freelancer != address(0)) revert FreelancerAlreadySelected(); //("Project already has freelancer");
         require(project.escrowBalance == 0, "Already funded");
         require(project.status == ProjectStatus.Draft, "Invalid project status");
         
@@ -326,6 +326,7 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
     ) external onlyClient(_projectId) projectExists(_projectId) {
         Project storage project = projects[_projectId];
         require(project.status == ProjectStatus.Open, "Invalid status");
+        require(_freelancers.length > 0, "Cannot create empty shortlist"); // Added this check
         require(_freelancers.length <= 10, "Too many shortlisted");
         require(block.timestamp <= project.applicationDeadline, "Application period ended");
         
@@ -449,7 +450,7 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
     {
         Milestone storage milestone = milestones[_milestoneId];
         require(milestone.status == MilestoneStatus.Pending, "Milestone already submitted");
-        require(block.timestamp >= milestone.deadline - SUBMISSION_START_BUFFER, "Final submission too early");
+        // require(block.timestamp >= milestone.deadline - SUBMISSION_START_BUFFER, "Final submission too early");
         require(block.timestamp <= milestone.deadline + FINAL_SUBMISSION_END_BUFFER, "Final submission period over");
         
         milestone.finalSubmitTime = block.timestamp;
