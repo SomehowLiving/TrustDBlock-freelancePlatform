@@ -24,7 +24,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
         // Agree single milestone
         const latest = await ethers.provider.getBlock("latest");
         const amounts = [MILESTONE_AMOUNT];
-        const deadlines = [latest.timestamp + 7 * 24 * 3600 + 3600];
+        const deadlines = [latest.timestamp + 7 * 24 * 3600 ];
         const metadataHashes = ["QmMilestone1"];
         await freelancePlatform.connect(client).agreeMilestones(projectId, amounts, deadlines, metadataHashes);
 
@@ -80,7 +80,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
         });
 
         it("Should auto-approve milestone after timeout", async function () {
-            await ethers.provider.send("evm_increaseTime", [86400 * 11]); // 11 days
+            await ethers.provider.send("evm_increaseTime", [86400 * 15]); // 8days
             await ethers.provider.send("evm_mine");
 
             const freelancerBalanceBefore = await ethers.provider.getBalance(freelancer.address);
@@ -109,7 +109,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
             const amounts = [MILESTONE_AMOUNT];
             // Use blockchain timestamp for deadlines
             const latestBlock = await ethers.provider.getBlock("latest");
-            const deadlines = [latestBlock.timestamp + 86400 * 7 + 3600];
+            const deadlines = [latestBlock.timestamp + 86400 * 7];
             const metadataHashes = ["QmMilestone1"];
 
             await freelancePlatform.connect(client).agreeMilestones(
@@ -148,7 +148,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
         });
 
         it("Should allow anyone to call autoApproveMilestone", async function () {
-            await ethers.provider.send("evm_increaseTime", [86400 * 11]);
+            await ethers.provider.send("evm_increaseTime", [86400 * 14+ 3600]); // 15 days > AUTO_APPROVE_PERIOD
             await ethers.provider.send("evm_mine");
             await expect(
                 freelancePlatform.connect(otherUser).autoApproveMilestone(milestoneId)
@@ -157,7 +157,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
 
         // ---------- Time Constraints ----------
         it("Should revert if approval happens after review period expired", async function () {
-            await ethers.provider.send("evm_increaseTime", [10 * 24 * 3600 + 1]); // beyond REVIEW_PERIOD
+            await ethers.provider.send("evm_increaseTime", [12 * 24 * 3600 +3600 ]); // REVIEW_PERIOD= 5days
             await ethers.provider.send("evm_mine");
             await expect(
                 freelancePlatform.connect(client).approveMilestone(milestoneId)
@@ -165,7 +165,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
         });
 
         it("Should revert auto-approve if called before AUTO_APPROVE_PERIOD", async function () {
-            await ethers.provider.send("evm_increaseTime", [86400 * 3]);
+            await ethers.provider.send("evm_increaseTime", [86400 * 3]); //3 days < AUTO_APPROVE_PERIOD
             await ethers.provider.send("evm_mine");
             await expect(
                 freelancePlatform.autoApproveMilestone(milestoneId)
@@ -317,8 +317,8 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
 
             const balBefore = await ethers.provider.getBalance(freelancer.address);
 
-            // Wait > AUTO_APPROVE_PERIOD (10 days)
-            await ethers.provider.send("evm_increaseTime", [11 * 24 * 3600]);
+            // Wait > AUTO_APPROVE_PERIOD (7 days)
+            await ethers.provider.send("evm_increaseTime", [14 * 24 * 3600 +3600]);
             await ethers.provider.send("evm_mine");
 
             const tx = await freelancePlatform.autoApproveMilestone(milestoneId);
@@ -408,7 +408,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
 
             const amounts2 = [MILESTONE_AMOUNT];
             const block = await ethers.provider.getBlock("latest");
-            const deadlines2 = [block.timestamp + 86400 * 7 + 3600];
+            const deadlines2 = [block.timestamp + 86400 * 7];
             await freelancePlatform.connect(client).agreeMilestones(projectId2, amounts2, deadlines2, ["QmM2"]);
 
             const milestoneId2 = 2;
@@ -425,7 +425,7 @@ describe("Milestone Approval and Payment - Extended Scenarios", function () {
             const feesBefore = await freelancePlatform.totalFeesCollected();
             const feeBps = await freelancePlatform.freelancerFeePercent();
 
-            await ethers.provider.send("evm_increaseTime", [11 * 24 * 3600]);
+            await ethers.provider.send("evm_increaseTime", [14* 24 * 3600+ 3600]);
             await ethers.provider.send("evm_mine");
             await freelancePlatform.autoApproveMilestone(milestoneId);
 

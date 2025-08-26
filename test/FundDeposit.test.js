@@ -142,6 +142,7 @@ describe("Fund Deposit", function () {
         await freelancePlatform.connect(client).depositFunds(projectId, {
             value: PROJECT_BUDGET
         });
+        await freelancePlatform.connect(freelancer).applyForProject(projectId, "QmFreelancerHash");
         // select freelancer
         await freelancePlatform.connect(client).selectFreelancer(projectId, freelancer.address);
 
@@ -157,7 +158,9 @@ describe("Fund Deposit", function () {
         await freelancePlatform.connect(client).depositFunds(projectId, {
             value: PROJECT_BUDGET
         });
-
+         await freelancePlatform.connect(freelancer).applyForProject(projectId, "QmFreelancerHash");
+          await freelancePlatform.connect(otherUser).applyForProject(projectId, "QmFreelancerHash");
+       
         // Step 2: select the first freelancer
         await freelancePlatform.connect(client).selectFreelancer(projectId, freelancer.address);
 

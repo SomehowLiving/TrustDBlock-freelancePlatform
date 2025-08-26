@@ -14,6 +14,7 @@ async function deployContracts() {
   // Setup roles
   await userRegistry.connect(client).selfRegister("Client", "QmClientHash");
   await userRegistry.connect(freelancer).selfRegister("Freelancer", "QmFreelancerHash");
+  await userRegistry.connect(otherUser).selfRegister("Freelancer", "QmFreelancerHash");
 
   return {
     freelancePlatform,
