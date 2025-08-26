@@ -54,7 +54,7 @@ describe("Application Process", function () {
     it("Should revert if client tries to apply", async function () {
         await expect(
             freelancePlatform.connect(client).applyForProject(projectId, "QmProposalHash")
-        ).to.be.revertedWith("Client cannot apply");
+        ).to.be.revertedWith("Only freelancers allowed");
     });
 
     //---------------------------ADDITIONAL TESTS---------------------------
