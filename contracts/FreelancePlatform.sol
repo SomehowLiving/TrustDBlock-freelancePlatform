@@ -45,9 +45,9 @@ contract FreelancePlatform is Ownable, ReentrancyGuard, AccessControl {
     uint256 constant SUBMISSION_END_BUFFER = 3 days; // from 10days
     // uint256 constant FINAL_SUBMISSION_END_BUFFER = 10 days;
     uint256 constant EXTENSION_REQUEST_CUTOFF_BUFFER = 2 days;
-    uint256 constant REVIEW_PERIOD = 7 days;
+    uint256 constant REVIEW_PERIOD = 5 days;
     uint256 constant AUTO_APPROVE_PERIOD = 7 days;
-    uint256 constant DISPUTE_WINDOW = 14 days;
+    uint256 constant DISPUTE_WINDOW = 7 days;// from 14m days
 
     // ========== ENUMS ==========
     enum ProjectStatus {
@@ -499,7 +499,7 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
         require(!milestone.disputeRaised, "Milestone is under dispute");
 
         require(
-            block.timestamp <= milestone.submissionTime + REVIEW_PERIOD,
+            block.timestamp <= milestone.deadline + REVIEW_PERIOD,
             "Approval period expired"
         );
 
@@ -574,10 +574,10 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
         Milestone storage milestone = milestones[_milestoneId];
 
         require(
-            milestone.status == MilestoneStatus.Submitted, "Invalid status"
+            milestone.status == MilestoneStatus.Submitted || milestone.status == MilestoneStatus.Disputed, "Invalid status"
         );
         require(
-            block.timestamp > milestone.submissionTime + AUTO_APPROVE_PERIOD,
+            block.timestamp > milestone.deadline + AUTO_APPROVE_PERIOD,
             "Auto-approve period not reached"
         );
         require(
@@ -725,6 +725,11 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
         // Removed nonReentrant since is marked nonReentrant but called from another nonReentrant function
         Milestone storage milestone = milestones[_milestoneId];
         uint256 projId = milestone.projectId;
+        require(
+            milestone.status == MilestoneStatus.Pending || milestone.status == MilestoneStatus.Submitted,
+            "Milestone not cancellable"
+        );
+
         if (milestone.status != MilestoneStatus.Paid) {
             // Refund to client
             payable(projects[projId].client).transfer(milestone.amount);
@@ -752,7 +757,7 @@ function updateUserRegistry(address _userRegistryAddress) external onlyOwner {
         );
 
         require(
-            block.timestamp <= milestone.submissionTime + DISPUTE_WINDOW,
+            block.timestamp <= milestone.deadline + DISPUTE_WINDOW,
             "Dispute window expired"
         );
         require(!milestone.disputeRaised, "Dispute already raised");
