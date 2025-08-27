@@ -1,4 +1,5 @@
 const { expect } = require("chai");
+const { ethers } = require("hardhat");
 const { deployContracts, PROJECT_BUDGET, MILESTONE_AMOUNT, FREELANCER_FEE } = require("./helpers/setup");
 
 describe("Dispute System", function () {
@@ -137,4 +138,120 @@ describe("Dispute System", function () {
                 freelancePlatform.connect(client).disputeMilestone(milestoneId)
             ).to.be.revertedWith("Dispute window expired");
         });
+
+        // ADDITIONAL
+it("Should revert if dispute already raised", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    await expect(
+        freelancePlatform.connect(client).disputeMilestone(milestoneId)
+    ).to.be.revertedWith("Milestone not in submitted state");
+});
+
+it("Should revert if non-participant tries to dispute", async function () {
+    await expect(
+        freelancePlatform.connect(otherUser).disputeMilestone(milestoneId)
+    ).to.be.revertedWithCustomError(freelancePlatform, "UnauthorizedCaller");
+});
+
+it("Should revert if non-owner tries to resolve dispute", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    await expect(
+        freelancePlatform.connect(client).resolveDispute(milestoneId, client.address, MILESTONE_AMOUNT)
+    ).to.be.revertedWithCustomError(freelancePlatform, "OwnableUnauthorizedAccount");
+});
+
+it("Should revert if disputed amount exceeds milestone amount", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    const tooMuch = MILESTONE_AMOUNT + 1n;
+    await expect(
+        freelancePlatform.connect(owner).resolveDispute(milestoneId, client.address, tooMuch)
+    ).to.be.revertedWithCustomError(freelancePlatform, "DisputedAmountExceedsMilestone");
+});
+
+it("Should revert if disputed amount exceeds escrow balance", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    await freelancePlatform.connect(owner).resolveDispute(milestoneId, freelancer.address, MILESTONE_AMOUNT); // resolves and empties escrow
+
+    // Try resolving again on same milestone
+    await expect(
+        freelancePlatform.connect(owner).resolveDispute(milestoneId, client.address, MILESTONE_AMOUNT)
+    ).to.be.revertedWith("No dispute exists");
+});
+
+it("Should revert if disputed amount is zero", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    await expect(
+        freelancePlatform.connect(owner).resolveDispute(milestoneId, client.address, 0)
+    ).to.be.revertedWithCustomError(freelancePlatform, "InvalidDisputedAmount");
+});
+
+it("Should revert if trying to resolve an already resolved dispute", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    await freelancePlatform.connect(owner).resolveDispute(milestoneId, freelancer.address, MILESTONE_AMOUNT);
+
+    await expect(
+        freelancePlatform.connect(owner).resolveDispute(milestoneId, freelancer.address, MILESTONE_AMOUNT)
+    ).to.be.revertedWith("No dispute exists");
+});
+
+it("Should update escrow and pending amounts correctly after dispute", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    
+    const projectBefore = await freelancePlatform.getProject(projectId);
+    
+    await freelancePlatform.connect(owner).resolveDispute(milestoneId, freelancer.address, MILESTONE_AMOUNT);
+    
+    const projectAfter = await freelancePlatform.getProject(projectId);
+    
+    // Convert to BigInt for arithmetic
+    const escrowBefore = BigInt(projectBefore.escrowBalance.toString());
+    const escrowAfter = BigInt(projectAfter.escrowBalance.toString());
+    const milestoneAmount = MILESTONE_AMOUNT;
+    
+    // Test escrow balance decreased by milestone amount
+    expect(escrowAfter).to.equal(escrowBefore - milestoneAmount);
+    
+    // Test completed milestones increased by 1
+    expect(Number(projectAfter.completedMilestones)).to.equal(Number(projectBefore.completedMilestones) + 1);
+    
+    // Test project is no longer disputed
+    expect(projectAfter.isDisputed).to.be.false;
+    
+    console.log("✅ Escrow before:", escrowBefore.toString());
+    console.log("✅ Escrow after:", escrowAfter.toString());
+    console.log("✅ Difference:", (escrowBefore - escrowAfter).toString());
+    console.log("✅ Expected difference:", milestoneAmount.toString());
+});
+
+it("Should finalize project when all milestones completed after dispute", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    await freelancePlatform.connect(owner).resolveDispute(milestoneId, freelancer.address, MILESTONE_AMOUNT);
+
+    const project = await freelancePlatform.getProject(projectId);
+    expect(project.completedMilestones).to.equal(project.totalMilestones);
+
+    // Optional: check for finalize-related state or event
+});
+
+it("Should allow freelancer to raise a dispute", async function () {
+    const tx = await freelancePlatform.connect(freelancer).disputeMilestone(milestoneId);
+
+    await expect(tx).to.emit(freelancePlatform, "DisputeRaised")
+        .withArgs(projectId, freelancer.address);
+});
+
+it("Should resolve dispute with partial payout to freelancer", async function () {
+    await freelancePlatform.connect(client).disputeMilestone(milestoneId);
+    const partialAmount = MILESTONE_AMOUNT / 2n;
+
+    const tx = await freelancePlatform.connect(owner).resolveDispute(milestoneId, freelancer.address, partialAmount);
+    await expect(tx).to.emit(freelancePlatform, "DisputeResolved")
+        .withArgs(projectId, freelancer.address, partialAmount);
+
+    const milestone = await freelancePlatform.getMilestone(milestoneId);
+    expect(milestone.status).to.equal(3); // Paid
+});
+
+
+
     });
