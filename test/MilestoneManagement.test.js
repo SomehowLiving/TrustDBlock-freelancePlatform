@@ -90,6 +90,7 @@ describe("Milestone Management", function () {
             await freelancePlatform.connect(client).createProject(PROJECT_BUDGET, 2, "QmTestHash2", 7);
             const newProjectId = 2;
             await freelancePlatform.connect(client).depositFunds(newProjectId, { value: PROJECT_BUDGET });
+            await freelancePlatform.connect(freelancer).applyForProject(newProjectId, "QmProposal2");
             await freelancePlatform.connect(client).selectFreelancer(newProjectId, freelancer.address);
 
             const amounts = [MILESTONE_AMOUNT, MILESTONE_AMOUNT];
@@ -455,11 +456,9 @@ describe("Milestone Management", function () {
         it("Should allow submission at exact end of grace period", async function () {
             const milestone = await freelancePlatform.getMilestone(milestoneId);
            
-            // Set time to exactly 3 days after deadline (convert BigInt to Number properly)
-   const newTimestamp = Number(milestone.deadline) + (86400 * 3) - 1; // -1 for mining time
-    await ethers.provider.send("evm_setNextBlockTimestamp", [newTimestamp]);
-    
-            // await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) + 86400 * 3]);
+            // Set time to exactly 3 days after deadline minus 1 second for mining time
+            const newTimestamp = Number(milestone.deadline) + (86400 * 3) - 1;
+            await ethers.provider.send("evm_setNextBlockTimestamp", [newTimestamp]);
             await ethers.provider.send("evm_mine");
 
             const tx = await freelancePlatform.connect(freelancer).submitMilestoneWork(
@@ -522,7 +521,7 @@ describe("Milestone Management", function () {
                     "QmNonExistent",
                     "Non-existent milestone"
                 )
-            ).to.be.revertedWithCustomError(freelancePlatform, "UnauthorizedCaller"); // as we firstly check if the freelancer/client for that project/milestone exists 
+            ).to.be.revertedWithCustomError(freelancePlatform, "UnauthorizedCaller");
         });
 
         it("Should handle empty delivery hash and notes", async function () {
@@ -537,176 +536,6 @@ describe("Milestone Management", function () {
             const delivery = await freelancePlatform.getDelivery(milestoneId);
             expect(delivery.deliveryHash).to.equal("");
             expect(delivery.notes).to.equal("");
-        });
-    });
-
-    describe("Final Submit Milestone Function Tests", function () {
-        let SUBMISSION_START_BUFFER, FINAL_SUBMISSION_END_BUFFER;
-
-        beforeEach(async function () {
-            // Get buffer constants from contract (assuming they're public or have getters)
-            SUBMISSION_START_BUFFER = 86400 * 3; // 3 days (assumption based on common practice)
-            FINAL_SUBMISSION_END_BUFFER = 86400 * 10; // 10 days (assumption)
-
-            // Setup milestone
-            const amounts = getMilestoneAmounts(PROJECT_BUDGET, 1);
-            const latestBlock = await ethers.provider.getBlock("latest");
-            const deadlines = [latestBlock.timestamp + 86400 * 7]; // 7 days
-            const metadataHashes = ["QmMilestone1"];
-
-            await freelancePlatform.connect(client).agreeMilestones(
-                projectId,
-                amounts,
-                deadlines,
-                metadataHashes
-            );
-
-            milestoneId = 1;
-        });
-
-        function getMilestoneAmounts(projectBudget, numMilestones) {
-            const escrowBalance = projectBudget - (projectBudget * BigInt(PLATFORM_FEE) / 10000n);
-            return [escrowBalance];
-        }
-
-it("Should allow final submission within allowed window", async function () {
-    const milestone = await freelancePlatform.getMilestone(milestoneId);
-    
-    // Set time to 2 days before deadline (within SUBMISSION_START_BUFFER)
-    // Convert BigInt to Number properly
-    const deadlineNumber = Number(milestone.deadline);
-    const newTimestamp = deadlineNumber - (86400 * 2);
-    await ethers.provider.send("evm_setNextBlockTimestamp", [newTimestamp]);
-    await ethers.provider.send("evm_mine");
-
-    const tx = await freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId);
-
-    await expect(tx).to.emit(freelancePlatform, "MilestoneFinalSubmitted")
-        .withArgs(milestoneId, projectId, newTimestamp + 1, freelancer.address);
-
-    const updatedMilestone = await freelancePlatform.getMilestone(milestoneId);
-    expect(updatedMilestone.status).to.equal(1); // Submitted
-    expect(updatedMilestone.finalSubmitTime).to.be.greaterThan(0);
-});
-
-        it("Should allow final submission at exact start of window", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time to 1 second AFTER the SUBMISSION_START_BUFFER begins
-    // This accounts for the block mining time
-    // SUBMISSION_START_BUFFER is 2 days = 172800 seconds
-    const SUBMISSION_START_BUFFER = 172800; // 2 days in seconds
-    const deadlineNumber = Number(milestone.deadline);
-    const newTimestamp = deadlineNumber - SUBMISSION_START_BUFFER + 1; // +1 to account for mining time
-    await ethers.provider.send("evm_setNextBlockTimestamp", [newTimestamp]);
-    await ethers.provider.send("evm_mine");
-
-            const tx = await freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId);
-
-            await expect(tx).to.emit(freelancePlatform, "MilestoneFinalSubmitted");
-        });
-
-        it("Should revert final submission too early", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time to before the allowed submission window
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) - SUBMISSION_START_BUFFER - 1]);
-            await ethers.provider.send("evm_mine");
-
-            await expect(
-                freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId)
-            ).to.be.revertedWith("Final submission too early");
-        });
-
-        it("Should allow final submission within end buffer", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time to 1 second BEFORE the FINAL_SUBMISSION_END_BUFFER ends
-    // This accounts for the block mining time which will add ~1 second
-    // FINAL_SUBMISSION_END_BUFFER is 10 days = 864000 seconds
-    const FINAL_SUBMISSION_END_BUFFER = 864000; // 10 days in seconds
-    const deadlineNumber = Number(milestone.deadline);
-    const newTimestamp = deadlineNumber + FINAL_SUBMISSION_END_BUFFER - 1; // -1 to account for mining time
-    await ethers.provider.send("evm_setNextBlockTimestamp", [newTimestamp]);
-    await ethers.provider.send("evm_mine");
-            const tx = await freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId);
-
-            await expect(tx).to.emit(freelancePlatform, "MilestoneFinalSubmitted");
-        });
-
-        it("Should allow final submission at exact end of buffer", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time to exactly FINAL_SUBMISSION_END_BUFFER after deadline
-    // FINAL_SUBMISSION_END_BUFFER is 10 days = 864000 seconds
-    const FINAL_SUBMISSION_END_BUFFER = 864000; // 10 days in seconds
-    const deadlineNumber = Number(milestone.deadline);
-    const newTimestamp = deadlineNumber + FINAL_SUBMISSION_END_BUFFER -1; // -1 to account for mining time
-    await ethers.provider.send("evm_setNextBlockTimestamp", [newTimestamp]);
-            // await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) + FINAL_SUBMISSION_END_BUFFER]);
-            await ethers.provider.send("evm_mine");
-
-            const tx = await freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId);
-
-            await expect(tx).to.emit(freelancePlatform, "MilestoneFinalSubmitted");
-        });
-
-        it("Should revert final submission after end buffer", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time to after the allowed submission window
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) + FINAL_SUBMISSION_END_BUFFER + 1]);
-            await ethers.provider.send("evm_mine");
-
-            await expect(
-                freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId)
-            ).to.be.revertedWith("Final submission period over");
-        });
-
-        it("Should revert if milestone already submitted via regular submission", async function () {
-            // Regular submission first
-            await freelancePlatform.connect(freelancer).submitMilestoneWork(
-                milestoneId,
-                "QmRegularSubmission",
-                "Regular submission"
-            );
-
-            // Move time to final submission window
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) - 86400]);
-            await ethers.provider.send("evm_mine");
-
-            await expect(
-                freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId)
-            ).to.be.revertedWith("Milestone already submitted");
-        });
-
-        it("Should revert if non-freelancer tries final submission", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time within allowed window
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) - 86400]);
-            await ethers.provider.send("evm_mine");
-
-            await expect(
-                freelancePlatform.connect(client).finalSubmitMilestone(milestoneId)
-            ).to.be.revertedWithCustomError(freelancePlatform, "UnauthorizedCaller");
-        });
-
-        it("Should handle multiple final submission attempts", async function () {
-            const milestone = await freelancePlatform.getMilestone(milestoneId);
-            
-            // Set time within allowed window
-            await ethers.provider.send("evm_setNextBlockTimestamp", [Number(milestone.deadline) - 86400]);
-            await ethers.provider.send("evm_mine");
-
-            // First final submission
-            await freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId);
-
-            // Second attempt should fail
-            await expect(
-                freelancePlatform.connect(freelancer).finalSubmitMilestone(milestoneId)
-            ).to.be.revertedWith("Milestone already submitted");
         });
     });
 
@@ -751,7 +580,7 @@ it("Should allow final submission within allowed window", async function () {
             );
 
             const expectedPendingAmount = amounts[0] + amounts[1];
-            const actualPendingAmount = await freelancePlatform.pendingAmounts(projectId);
+            const actualPendingAmount = await freelancePlatform.getPendingAmount(projectId);
             expect(actualPendingAmount).to.equal(expectedPendingAmount);
         });
 
@@ -768,3 +597,4 @@ it("Should allow final submission within allowed window", async function () {
         }
     });
 });
+

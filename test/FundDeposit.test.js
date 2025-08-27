@@ -154,6 +154,9 @@ describe("Fund Deposit", function () {
     });
 
     it("Should revert if project already has freelancer", async function () {
+        // Register another freelancer
+        await userRegistry.connect(otherUser).selfRegister("Freelancer", "QmOtherHash");
+
         // Step 1: fund the project
         await freelancePlatform.connect(client).depositFunds(projectId, {
             value: PROJECT_BUDGET
@@ -163,7 +166,7 @@ describe("Fund Deposit", function () {
        
         // Step 2: select the first freelancer
         await freelancePlatform.connect(client).selectFreelancer(projectId, freelancer.address);
-
+        
         // Step 3: try selecting another freelancer
         await expect(
             freelancePlatform.connect(client).selectFreelancer(projectId, otherUser.address)

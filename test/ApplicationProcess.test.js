@@ -92,6 +92,7 @@ describe("Application Process", function () {
         await userRegistry.connect(otherUser).selfRegister("Freelancer", "QmOtherHash");
 
         await freelancePlatform.connect(freelancer).applyForProject(projectId, "QmProposal1");
+
         await freelancePlatform.connect(otherUser).applyForProject(projectId, "QmProposal2");
 
         expect(await freelancePlatform.hasFreelancerApplied(projectId, freelancer.address)).to.be.true;
