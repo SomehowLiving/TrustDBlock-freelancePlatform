@@ -58,6 +58,23 @@ const validateWallet = (req, res, next) => {
   next();
 };
 
+// Middleware to check user registration
+const checkUserRegistration = async (req, res, next) => {
+  try {
+    const isRegistered = await userRegistryContract.isUserRegistered(req.userAddress);
+    if (!isRegistered) {
+      return res.status(400).json({
+        success: false,
+        error: 'User must be registered first. Please register through /users/register'
+      });
+    }
+    next();
+  } catch (error) {
+    handleError(error, res);
+  }
+};
+
+
 // Middleware to sync/verify user exists
 const syncUser = async (req, res, next) => {
   try {
@@ -152,6 +169,7 @@ const syncProjectStatus = async (project) => {
 module.exports = {
 validateAddress, 
   validateAmount, 
+  checkUserRegistration,
   parseEther, 
   formatEther, 
   generateId, 
