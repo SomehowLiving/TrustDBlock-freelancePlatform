@@ -25,13 +25,20 @@ const {
 // Contract configurations (shared)
 const { CONTRACTS, provider, freelancePlatformContract, userRegistryContract } = require('./contracts.js'); // Extract contract setup
 
-// Create project (hybrid approach)
+// Create project (hybrid approach)- tested
 router.post('/projects', validateWallet, syncUser, async (req, res) => {
   try {
+    // user exists and is a client
     if (!req.user) {
       return res.status(400).json({
         success: false,
         error: 'User must be registered first'
+      });
+    }
+    if (req.user.role !== 'client') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only clients can create projects on-chain'
       });
     }
 
@@ -92,7 +99,8 @@ router.post('/projects', validateWallet, syncUser, async (req, res) => {
       },
       status: 'created'
     });
-
+    console.log('Project created in DB:', project._id);
+    
     // Prepare blockchain data
     const metadata = {
       title,
@@ -101,28 +109,64 @@ router.post('/projects', validateWallet, syncUser, async (req, res) => {
       skills,
       category: category || 'Other'
     };
-    const metadataHash = "QmProjectMetadata" + projectId; // Implement IPFS upload
+    // const metadataHash = await uploadToIPFS(metadat) in future 
+    const metadataHash = "QmProjectMetadata" + project._id; // Implement IPFS upload
 
+    // 3. Signer and contract
+    const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+    const freelancePlatformWithSigner = freelancePlatformContract.connect(signer);
+    let txHash;
+    let projectIdOnChain;
+
+    try {
+      const tx = await freelancePlatformWithSigner.createProject(
+        parseEther(budget),
+        expectedMilestones,
+        metadataHash,
+        7, // application period days
+        { gasLimit: 300_000 }
+      );
+      txHash = tx.hash;
+      console.log("Transaction sent:", tx.hash);
+
+      const receipt = await tx.wait();
+      console.log("Transaction mined:", receipt.transactionHash);
+      
+      // Extract on-chain project ID from event logs
+      const event = receipt.events?.find(e => e.event === 'ProjectCreated');
+projectIdOnChain = event?.args?.projectId?.toString();
+      console.log('On-chain project ID:', projectIdOnChain);
+      
+      // 4. Update project in MongoDB with blockchain info
+      await Project.findByIdAndUpdate(project._id, {
+        'blockchain.txHash': tx.hash,
+        'blockchain.status': 'pending',
+        // onChainId: Number(projectIdOnChain)
+      });
+
+    } catch (err) {
+      console.error("Blockchain createProject failed:", err);
+    }
+    // Return response
     res.status(201).json({
       success: true,
       data: {
         project,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'createProject',
-          params: [
-            parseEther(budget).toString(),
-            expectedMilestones,
-            metadataHash,
-            7 // applicationPeriodDays
-          ],
-          address: CONTRACTS.freelancePlatform.address
+        blockchain: {
+          txHash,
+          projectId: projectIdOnChain,
+          metadataHash
         }
       },
-      message: 'Project created in database. Please complete blockchain transaction.'
+      message: 'Project created in database. Blockchain transaction initiated.'
     });
+
   } catch (error) {
-    handleError(error, res, 'Project creation failed');
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      error: 'Project creation failed'
+    });
   }
 });
 
@@ -323,9 +367,9 @@ router.get('/projects/:id', async (req, res) => {
       success: true,
       data: {
         project,
-        applications: applications.length,
+        applications: applications?.length || 0,
         applicationsDetail: applications,
-        milestones: milestones.length,
+        milestones: milestones?.length || 0,
         milestonesDetail: milestones,
         progress: project.calculateProgress()
       }

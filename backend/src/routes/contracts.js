@@ -43,7 +43,7 @@ const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 // Contract instance connected with signer (write access)
 const userRegistryWithSigner = userRegistryContract.connect(wallet);
-
+const freelancePlatformWithSigner= freelancePlatformContract.connect(wallet);
 
 module.exports = {
     router,
@@ -51,5 +51,6 @@ module.exports = {
     provider,
     freelancePlatformContract,
     userRegistryContract, // read only
-    userRegistryWithSigner // write 
-    };
+    userRegistryWithSigner, // write 
+    freelancePlatformWithSigner
+  };
