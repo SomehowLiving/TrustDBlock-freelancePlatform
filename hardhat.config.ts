@@ -12,7 +12,7 @@ const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.28",
     settings: {
-      optimizer: { enabled: true, runs: 50 }, 
+      optimizer: { enabled: true, runs: 50 },
       viaIR: true,
       metadata: { bytecodeHash: "none" },
     },
@@ -21,10 +21,13 @@ const config: HardhatUserConfig = {
     hardhat: {},
     localhost: {
       url: "http://127.0.0.1:8545",
-      timeout: 1000000, // 👈 Increase timeout (default is 4000ms)
+      timeout: 1000000,
     },
+    // ---- Ethereum Sepolia (Google Cloud RPC) ----
     sepolia: {
-      url: `https://blockchain.googleapis.com/v1/projects/snap-anime/locations/asia-east1/endpoints/ethereum-sepolia/rpc?key=${process.env.API_KEY}`,
+      // `https://eth-sepolia.g.alchemy.com/v2/${process.env.API_KEY}`,
+      url: `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+      // `https://blockchain.googleapis.com/v1/projects/snap-anime/locations/asia-east1/endpoints/ethereum-sepolia/rpc?key=${process.env.API_KEY}`,
       accounts: [`0x${process.env.SEPOLIA_PRIVATE_KEY}`],
       // accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
@@ -33,11 +36,51 @@ const config: HardhatUserConfig = {
       accounts: [`0x${process.env.SEPOLIA_PRIVATE_KEY}`
       ],
       // chainId: 111666111, // Sepolia chain ID
-    }
-  },
-  ignition:{
+    },
+    // ---- Avalanche ----
+    avalancheFuji: {
+      // `https://avax-fuji.g.alchemy.com/v2/${process.env.API_KEY}`
+      url: `https://avax-fuji.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+      // "https://api.avax-test.network/ext/bc/C/rpc",
+      chainId: 43113,
+      accounts: process.env.AVALANCHE_PRIVATE_KEY
+        ? [`0x${process.env.AVALANCHE_PRIVATE_KEY}`]
+        : [],
+    },
+    avalanche: {
+      // `https://avalanche-amoy.g.alchemy.com/v2/${process.env.API_KEY}`
+      url: "https://api.avax.network/ext/bc/C/rpc",
+      chainId: 43114,
+      accounts: process.env.AVALANCHE_PRIVATE_KEY
+        ? [`0x${process.env.AVALANCHE_PRIVATE_KEY}`]
+        : [],
+    },
 
-  }
+    // ---- Polygon ----
+    polygonMumbai: {
+      url: "https://rpc-mumbai.maticvigil.com",
+      chainId: 80001,
+      accounts: process.env.POLYGON_PRIVATE_KEY
+        ? [`0x${process.env.POLYGON_PRIVATE_KEY}`]
+        : [],
+    },
+    polygon: {
+      // `https://polygon-amoy.g.alchemy.com/v2/${process.env.API_KEY}`
+      url: "https://polygon-rpc.com",
+      chainId: 137,
+      accounts: process.env.POLYGON_PRIVATE_KEY
+        ? [`0x${process.env.POLYGON_PRIVATE_KEY}`]
+        : [],
+    },
+
+  },
+  ignition: {},
+  etherscan: {
+    apiKey: {
+      sepolia: process.env.ETHERSCAN_API_KEY || "",
+    },
+  },
+
 };
 
 export default config;

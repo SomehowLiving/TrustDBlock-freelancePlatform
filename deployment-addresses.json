@@ -3,13 +3,13 @@
   "chainId": "11155111",
   "deployer": "0x4e656dA2f7e75d0d0d847b3aAbAD93364F8Eb652",
   "contracts": {
-    "UserRegistry": "0x6b8c3975665899D931Ff51f2a29767Da787cBd3A",
-    "FreelancePlatform": "0xe8cA862527762063915308fDDBd1ebd5f93DF6b4"
+    "UserRegistry": "0x81C2CceF307DeDbC8BCa995050AdB733D77D17c7",
+    "FreelancePlatform": "0xA3558560f8D28f15DC1229FA9d102C5d81548858"
   },
-  "deploymentTime": "2025-08-19T15:59:15.451Z",
+  "deploymentTime": "2025-08-27T10:19:16.163Z",
   "transactionHashes": {
-    "UserRegistry": "0xe99981d91e077fa906098c9d36d2b1adb68c77f94095ffd0a92d15486eb9981e",
-    "FreelancePlatform": "0x5889b13c9892ad06025e5ffa788fcec64f90ce5f61da13abb8d26f926a351d3f",
-    "Authorization": "0xeb8bac3dfd62c7f58ab73c7234cb0a07845fac6c91db07ed54ee8661bec3bb41"
+    "UserRegistry": "0x119a394675964a997579e363f7d32f2cf8a0d95838cdaa529abcf6f2e7522a9a",
+    "FreelancePlatform": "0x55509fec389606f4714975b12bb2ddba0916097b9952d7ae60ee2177a99430f9",
+    "Authorization": "0xdaf2afe5195b8d4bf8d719159b7ad4aef8abd43b903414b1f396439d098de6ea"
   }
 }
