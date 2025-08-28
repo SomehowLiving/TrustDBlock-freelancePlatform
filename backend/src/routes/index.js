@@ -9,10 +9,10 @@ const analyticsRoutes = require('./analytics');
 const adminRoutes = require('./admin');
 
 // Use the routes
-router.use('/api', userRegistryRoutes);
-router.use('/api', freelanceRoutes);
-router.use('/api', analyticsRoutes);
-router.use('/api', adminRoutes);
+router.use( userRegistryRoutes);
+router.use( freelanceRoutes);
+router.use( analyticsRoutes);
+router.use( adminRoutes);
 
 module.exports = router;
 

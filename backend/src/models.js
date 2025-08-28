@@ -2,6 +2,7 @@
 // Using Mongoose for Node.js
 
 const mongoose = require('mongoose');
+const bcrypt = require('bcrypt'); 
 
 // ========== USER MODEL ==========
 const userSchema = new mongoose.Schema({

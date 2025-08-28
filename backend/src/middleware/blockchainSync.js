@@ -35,7 +35,6 @@ class BlockchainSyncManager {
     'handleMilestonesAgreed',
     'handleProjectActivated',
     'handleMilestoneSubmitted',
-    'handleMilestoneFinalSubmitted', 
     'handleMilestoneApproved',
     'handlePaymentReleased',
     'handleMilestoneExtensionRequested',
@@ -97,7 +96,6 @@ class BlockchainSyncManager {
 
       // Milestone Events
       freelanceContract.on('MilestoneSubmitted', this.handleMilestoneSubmitted);
-      freelanceContract.on('MilestoneFinalSubmitted', this.handleMilestoneFinalSubmitted);
       freelanceContract.on('MilestoneApproved', this.handleMilestoneApproved);
       freelanceContract.on('PaymentReleased', this.handlePaymentReleased);
       freelanceContract.on('MilestoneExtensionRequested', this.handleMilestoneExtensionRequested);
@@ -1546,9 +1544,6 @@ class BlockchainSyncManager {
               break;
             case 'MilestoneSubmitted':
               await this.handleMilestoneSubmitted(...event.args, event);
-              break;
-            case 'MilestoneFinalSubmitted':
-              await this.handleMilestoneFinalSubmitted(...event.args, event);
               break;
             case 'MilestoneApproved':
               await this.handleMilestoneApproved(...event.args, event);

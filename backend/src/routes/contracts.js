@@ -38,10 +38,18 @@ const userRegistryContract = new ethers.Contract(
   provider
 );
 
+// Added a signer wallet (needs Sepolia ETH)
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+
+// Contract instance connected with signer (write access)
+const userRegistryWithSigner = userRegistryContract.connect(wallet);
+
+
 module.exports = {
     router,
     CONTRACTS,
     provider,
     freelancePlatformContract,
-    userRegistryContract
+    userRegistryContract, // read only
+    userRegistryWithSigner // write 
     };

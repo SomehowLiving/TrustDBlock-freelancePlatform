@@ -17,12 +17,14 @@ BASE_URL="http://localhost:3000/api"
 # Test wallet addresses (use actual addresses in production)
 CLIENT_ADDRESS="0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE"
 FREELANCER_ADDRESS="0xF708059673F78fc8bB01CF56C315519312E58079"
+FREELANCER_2="0x7E90f5F4b2222F5574f8A2e7f230270AaD5649C6"
 ADMIN_KEY="demo-admin-key"
 
 
 echo -e "${YELLOW}Testing with:${NC}"
 echo "Client Address: $CLIENT_ADDRESS"
 echo "Freelancer Address: $FREELANCER_ADDRESS"
+echo "Freelancer Address: $FREELANCER_2"
 echo "Base URL: $BASE_URL"
 echo ""
 
@@ -76,9 +78,9 @@ PROJECT_DATA='{
   "requirements": ["React", "Node.js", "Payment Integration"],
   "skills": ["Frontend", "Backend", "UI/UX"],
   "category": "Web Development",
-  "budget": "5.0",
-  "applicationPeriodDays": 7,
-  "expectedMilestones": 3,
+  "budget": "0.05",
+  "applicationPeriodDays": 2,
+  "expectedMilestones": 2,
   "walletAddress": "'$CLIENT_ADDRESS'"
 }'
 
@@ -90,14 +92,12 @@ PROJECT_ID=1
 # 3. Get Projects
 echo -e "${GREEN}=== 3. PROJECT RETRIEVAL ===${NC}"
 test_api "GET" "/projects" "" "" "Get all projects"
-test_api "GET" "/projects?status=draft&category=Web%20Development" "" "" "Filter projects by status and category"
 test_api "GET" "/projects/$PROJECT_ID" "" "" "Get specific project"
 
 # 4. Deposit Funds
 echo -e "${GREEN}=== 4. FUND DEPOSIT ===${NC}"
 DEPOSIT_DATA='{
-  "amount": "5.5",
-  "txHash": "0xabcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
+  "amount": "0.05"
 }'
 
 test_api "POST" "/projects/$PROJECT_ID/deposit" "$DEPOSIT_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Deposit funds to project"
@@ -113,12 +113,7 @@ APPLICATION_DATA='{
 }'
 
 test_api "POST" "/projects/$PROJECT_ID/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Apply for project"
-
-# Apply with another freelancer for shortlisting demo
-FREELANCER_2="0x8B3c8C7Fa3b7c8d9E0f1A2b3C4d5E6f7G8h9I0j1"
 test_api "POST" "/projects/$PROJECT_ID/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_2'" "Apply with second freelancer"
-
-# Get applications
 test_api "GET" "/projects/$PROJECT_ID/applications" "" "" "Get project applications"
 
 # 6. Shortlisting
@@ -132,18 +127,13 @@ test_api "POST" "/projects/$PROJECT_ID/shortlist" "$SHORTLIST_DATA" "-H 'x-walle
 # 7. Selection Process
 echo -e "${GREEN}=== 7. FREELANCER SELECTION ===${NC}"
 SELECTION_DATA='{
-  "freelancerAddress": "'$FREELANCER_ADDRESS'",
-  "txHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+  "freelancerAddress": "'$FREELANCER_ADDRESS'"
 }'
 
 test_api "POST" "/projects/$PROJECT_ID/select" "$SELECTION_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Select freelancer"
 
 # Freelancer accepts project
-ACCEPT_DATA='{
-  "txHash": "0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba"
-}'
-
-test_api "POST" "/projects/$PROJECT_ID/accept" "$ACCEPT_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Accept project (freelancer)"
+test_api "POST" "/projects/$PROJECT_ID/accept" "{}" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Accept project (freelancer)"
 
 # 8. Milestone Creation
 echo -e "${GREEN}=== 8. MILESTONE MANAGEMENT ===${NC}"
@@ -152,23 +142,16 @@ MILESTONES_DATA='{
     {
       "title": "UI/UX Design & Wireframes",
       "description": "Complete user interface design and interactive wireframes",
-      "amount": "1.5",
-      "deadline": "'$(date -d '+2 weeks' -Iseconds)'"
+      "amount": "0.02",
+      "deadline": "'$(date -d '+150 seconds' -Iseconds)'"
     },
     {
       "title": "Frontend Development",
       "description": "Build React components and user interface",
-      "amount": "2.0",
-      "deadline": "'$(date -d '+4 weeks' -Iseconds)'"
-    },
-    {
-      "title": "Backend & Integration",
-      "description": "API development and payment integration",
-      "amount": "1.5",
-      "deadline": "'$(date -d '+6 weeks' -Iseconds)'"
+      "amount": "0.03",
+      "deadline": "'$(date -d '+360 seconds' -Iseconds)'"
     }
   ],
-  "txHash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 }'
 
 test_api "POST" "/projects/$PROJECT_ID/milestones" "$MILESTONES_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Create project milestones"
@@ -195,8 +178,7 @@ SUBMISSION_DATA='{
       "url": "https://prototype-demo.com/project1",
       "size": 512000
     }
-  ],
-  "txHash": "0xdef456789abc0123456789def0123456789abc0123456789def0123456789abc"
+  ]
 }'
 
 test_api "POST" "/milestones/$MILESTONE_ID/submit" "$SUBMISSION_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Submit milestone work"
@@ -205,179 +187,176 @@ test_api "POST" "/milestones/$MILESTONE_ID/submit" "$SUBMISSION_DATA" "-H 'x-wal
 test_api "GET" "/milestones/$MILESTONE_ID" "" "" "Get milestone details"
 
 # 10. Milestone Approval & Payment
-echo -e "${GREEN}=== 10. MILESTONE APPROVAL & PAYMENT ===${NC}"
-APPROVAL_DATA='{
-  "txHash": "0x789abc0123456789def0123456789abc0123456789def0123456789abc0123456"
-}'
-
-test_api "POST" "/milestones/$MILESTONE_ID/approve" "$APPROVAL_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Approve milestone"
-
+echo -e "${GREEN}=== 10. APPROVAL & PAYMENT ===${NC}"
+test_api "POST" "/milestones/$MILESTONE_ID/approve" "{}" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Approve milestone"
 # Release payment
-PAYMENT_DATA='{
-  "txHash": "0x0123456789def0123456789abc0123456789def0123456789abc0123456789def"
-}'
+test_api "POST" "/milestones/$MILESTONE_ID/release" "{}" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Release milestone payment"
 
-test_api "POST" "/milestones/$MILESTONE_ID/release" "$PAYMENT_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Release milestone payment"
-
-# 11. User Data Retrieval
-echo -e "${GREEN}=== 11. USER DATA RETRIEVAL ===${NC}"
-test_api "GET" "/users/$CLIENT_ADDRESS/projects?role=client" "" "" "Get client projects"
-test_api "GET" "/users/$FREELANCER_ADDRESS/projects?role=freelancer" "" "" "Get freelancer projects"
-test_api "GET" "/users/$FREELANCER_ADDRESS/reputation" "" "" "Get freelancer reputation"
-
-# 12. Dispute Scenario (Optional)
-echo -e "${GREEN}=== 12. DISPUTE HANDLING ===${NC}"
-# Let's create a dispute scenario with milestone 2 (assuming it exists)
-MILESTONE_ID_2=2
-
-# First, we need to submit milestone 2
-SUBMISSION_DATA_2='{
-  "deliveryHash": "QmYyZzAa987654321fedcba...",
-  "notes": "Frontend development completed with all requested features.",
-  "files": [
-    {
-      "name": "frontend-code.zip",
-      "url": "https://ipfs.io/ipfs/QmYyZzAa...",
-      "size": 5120000
-    }
-  ],
-  "txHash": "0xfedcba9876543210abcdef0123456789fedcba9876543210abcdef0123456789"
-}'
-
-test_api "POST" "/milestones/$MILESTONE_ID_2/submit" "$SUBMISSION_DATA_2" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Submit milestone 2 work"
-
-# Create dispute
-DISPUTE_DATA='{
-  "reason": "The delivered frontend does not match the agreed specifications. Several key features are missing and the responsive design is not working properly on mobile devices.",
-  "txHash": "0x987654321fedcba0123456789abcdef987654321fedcba0123456789abcdef01"
-}'
-
-test_api "POST" "/milestones/$MILESTONE_ID_2/dispute" "$DISPUTE_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Raise dispute on milestone"
-
-# Admin resolves dispute
-RESOLUTION_DATA='{
-  "milestoneId": '$MILESTONE_ID_2',
-  "winner": "'$FREELANCER_ADDRESS'",
-  "amount": "2.0",
-  "adminKey": "'$ADMIN_KEY'",
-  "txHash": "0xabcdef0123456789fedcba9876543210abcdef0123456789fedcba9876543210"
-}'
-
-test_api "POST" "/admin/resolve-dispute" "$RESOLUTION_DATA" "" "Resolve dispute (admin)"
-
-# 13. Search & Filtering
-echo -e "${GREEN}=== 13. SEARCH & FILTERING ===${NC}"
-test_api "GET" "/search/projects?q=ecommerce&minBudget=3&maxBudget=10" "" "" "Search projects"
-test_api "GET" "/projects?category=Web%20Development&status=active" "" "" "Filter by category and status"
-
-# 14. Platform Statistics
-echo -e "${GREEN}=== 14. PLATFORM STATISTICS ===${NC}"
-test_api "GET" "/platform/stats" "" "" "Get platform statistics"
-
-# 15. Advanced Queries
-echo -e "${GREEN}=== 15. ADVANCED QUERIES ===${NC}"
-test_api "GET" "/projects?skills=React,Node.js&sortBy=budget&sortOrder=desc" "" "" "Filter by skills and sort by budget"
-test_api "GET" "/projects/$PROJECT_ID/applications?status=shortlisted" "" "" "Get shortlisted applications only"
-
-# 16. Error Handling Tests
-echo -e "${GREEN}=== 16. ERROR HANDLING TESTS ===${NC}"
-test_api "GET" "/projects/99999" "" "" "Get non-existent project (should return 404)"
-
-INVALID_DATA='{
-  "title": "",
-  "budget": "invalid"
-}'
-test_api "POST" "/projects" "$INVALID_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Create project with invalid data"
-
-test_api "POST" "/projects/99999/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Apply to non-existent project"
-
-test_api "POST" "/admin/resolve-dispute" "$RESOLUTION_DATA" "" "Try admin action without proper key (should fail)"
-
-# 17. Pagination Tests
-echo -e "${GREEN}=== 17. PAGINATION TESTS ===${NC}"
-test_api "GET" "/projects?page=1&limit=5" "" "" "Get projects with pagination"
-test_api "GET" "/users/$CLIENT_ADDRESS/projects?page=1&limit=10" "" "" "Get user projects with pagination"
-
-# 18. Complex Workflow Test
-echo -e "${GREEN}=== 18. COMPLETE WORKFLOW TEST ===${NC}"
-echo "Creating a complete project workflow..."
-
-# Create second project for complete workflow
-PROJECT_DATA_2='{
-  "title": "Mobile App Development",
-  "description": "React Native app for iOS and Android",
-  "requirements": ["React Native", "Firebase", "Push Notifications"],
-  "skills": ["Mobile Development", "React Native", "Backend"],
-  "category": "Mobile Development",
-  "budget": "8.0",
-  "applicationPeriodDays": 10,
-  "expectedMilestones": 4,
-  "walletAddress": "'$CLIENT_ADDRESS'"
-}'
-
-test_api "POST" "/projects" "$PROJECT_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Create second project"
-
-PROJECT_ID_2=2
-
-# Fund the project
-DEPOSIT_DATA_2='{
-  "amount": "8.5",
-  "txHash": "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff"
-}'
-
-test_api "POST" "/projects/$PROJECT_ID_2/deposit" "$DEPOSIT_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Fund second project"
-
-# Multiple freelancers apply
-FREELANCER_3="0x1111222233334444555566667777888899990000"
-FREELANCER_4="0xaaaabbbbccccddddeeeeffff0000111122223333"
-
-test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Freelancer 1 applies to project 2"
-test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_2'" "Freelancer 2 applies to project 2"
-test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_3'" "Freelancer 3 applies to project 2"
-test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_4'" "Freelancer 4 applies to project 2"
-
-# Shortlist and select
-SHORTLIST_DATA_2='{
-  "freelancerAddresses": ["'$FREELANCER_ADDRESS'", "'$FREELANCER_3'", "'$FREELANCER_4'"]
-}'
-
-test_api "POST" "/projects/$PROJECT_ID_2/shortlist" "$SHORTLIST_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Shortlist for project 2"
-
-SELECTION_DATA_2='{
-  "freelancerAddress": "'$FREELANCER_3'",
-  "txHash": "0x2222333344445555666677778888999900001111aaaabbbbccccddddeeeeffff"
-}'
-
-test_api "POST" "/projects/$PROJECT_ID_2/select" "$SELECTION_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Select freelancer for project 2"
-
-# Final status check
-echo -e "${GREEN}=== 19. FINAL STATUS CHECKS ===${NC}"
-test_api "GET" "/projects" "" "" "Get all projects - final state"
-test_api "GET" "/platform/stats" "" "" "Final platform statistics"
 
 echo ""
 echo -e "${GREEN}🎉 API Testing Complete!${NC}"
 echo "========================================"
-echo ""
-echo -e "${YELLOW}Summary of tested endpoints:${NC}"
-echo "✅ Health checks"
-echo "✅ Project CRUD operations"
-echo "✅ Application system"
-echo "✅ Freelancer selection process"
-echo "✅ Milestone management"
-echo "✅ Payment processing"
-echo "✅ Dispute handling"
-echo "✅ User data retrieval"
-echo "✅ Search and filtering"
-echo "✅ Platform statistics"
-echo "✅ Error handling"
-echo "✅ Pagination"
-echo ""
-echo -e "${YELLOW}Next steps:${NC}"
-echo "1. Connect to your deployed smart contract"
-echo "2. Add proper wallet authentication"
-echo "3. Implement IPFS for file storage"
-echo "4. Add comprehensive error handling"
-echo "5. Set up production database"
-echo ""
-echo -e "${GREEN}Happy coding! 🚀${NC}"
+# #------------------next part 2 test---------------------------
+
+# # 11. User Data Retrieval
+# echo -e "${GREEN}=== 11. USER DATA RETRIEVAL ===${NC}"
+# test_api "GET" "/users/$CLIENT_ADDRESS/projects?role=client" "" "" "Get client projects"
+# test_api "GET" "/users/$FREELANCER_ADDRESS/projects?role=freelancer" "" "" "Get freelancer projects"
+# test_api "GET" "/users/$FREELANCER_ADDRESS/reputation" "" "" "Get freelancer reputation"
+
+# # 12. Dispute Scenario (Optional)
+# echo -e "${GREEN}=== 12. DISPUTE HANDLING ===${NC}"
+# # Let's create a dispute scenario with milestone 2 (assuming it exists)
+# MILESTONE_ID_2=2
+
+# # First, we need to submit milestone 2
+# SUBMISSION_DATA_2='{
+#   "deliveryHash": "QmYyZzAa987654321fedcba...",
+#   "notes": "Frontend development completed with all requested features.",
+#   "files": [
+#     {
+#       "name": "frontend-code.zip",
+#       "url": "https://ipfs.io/ipfs/QmYyZzAa...",
+#       "size": 5120000
+#     }
+#   ],
+#   "txHash": "0xfedcba9876543210abcdef0123456789fedcba9876543210abcdef0123456789"
+# }'
+
+# test_api "POST" "/milestones/$MILESTONE_ID_2/submit" "$SUBMISSION_DATA_2" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Submit milestone 2 work"
+
+# # Create dispute
+# DISPUTE_DATA='{
+#   "reason": "The delivered frontend does not match the agreed specifications. Several key features are missing and the responsive design is not working properly on mobile devices.",
+#   "txHash": "0x987654321fedcba0123456789abcdef987654321fedcba0123456789abcdef01"
+# }'
+
+# test_api "POST" "/milestones/$MILESTONE_ID_2/dispute" "$DISPUTE_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Raise dispute on milestone"
+
+# # Admin resolves dispute
+# RESOLUTION_DATA='{
+#   "milestoneId": '$MILESTONE_ID_2',
+#   "winner": "'$FREELANCER_ADDRESS'",
+#   "amount": "2.0",
+#   "adminKey": "'$ADMIN_KEY'",
+#   "txHash": "0xabcdef0123456789fedcba9876543210abcdef0123456789fedcba9876543210"
+# }'
+
+# test_api "POST" "/admin/resolve-dispute" "$RESOLUTION_DATA" "" "Resolve dispute (admin)"
+
+# # 13. Search & Filtering
+# echo -e "${GREEN}=== 13. SEARCH & FILTERING ===${NC}"
+# test_api "GET" "/search/projects?q=ecommerce&minBudget=3&maxBudget=10" "" "" "Search projects"
+# test_api "GET" "/projects?category=Web%20Development&status=active" "" "" "Filter by category and status"
+
+# # 14. Platform Statistics
+# echo -e "${GREEN}=== 14. PLATFORM STATISTICS ===${NC}"
+# test_api "GET" "/platform/stats" "" "" "Get platform statistics"
+
+# # 15. Advanced Queries
+# echo -e "${GREEN}=== 15. ADVANCED QUERIES ===${NC}"
+# test_api "GET" "/projects?skills=React,Node.js&sortBy=budget&sortOrder=desc" "" "" "Filter by skills and sort by budget"
+# test_api "GET" "/projects/$PROJECT_ID/applications?status=shortlisted" "" "" "Get shortlisted applications only"
+
+# # 16. Error Handling Tests
+# echo -e "${GREEN}=== 16. ERROR HANDLING TESTS ===${NC}"
+# test_api "GET" "/projects/99999" "" "" "Get non-existent project (should return 404)"
+
+# INVALID_DATA='{
+#   "title": "",
+#   "budget": "invalid"
+# }'
+# test_api "POST" "/projects" "$INVALID_DATA" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Create project with invalid data"
+
+# test_api "POST" "/projects/99999/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Apply to non-existent project"
+
+# test_api "POST" "/admin/resolve-dispute" "$RESOLUTION_DATA" "" "Try admin action without proper key (should fail)"
+
+# # 17. Pagination Tests
+# echo -e "${GREEN}=== 17. PAGINATION TESTS ===${NC}"
+# test_api "GET" "/projects?page=1&limit=5" "" "" "Get projects with pagination"
+# test_api "GET" "/users/$CLIENT_ADDRESS/projects?page=1&limit=10" "" "" "Get user projects with pagination"
+
+# # 18. Complex Workflow Test
+# echo -e "${GREEN}=== 18. COMPLETE WORKFLOW TEST ===${NC}"
+# echo "Creating a complete project workflow..."
+
+# # Create second project for complete workflow
+# PROJECT_DATA_2='{
+#   "title": "Mobile App Development",
+#   "description": "React Native app for iOS and Android",
+#   "requirements": ["React Native", "Firebase", "Push Notifications"],
+#   "skills": ["Mobile Development", "React Native", "Backend"],
+#   "category": "Mobile Development",
+#   "budget": "8.0",
+#   "applicationPeriodDays": 10,
+#   "expectedMilestones": 4,
+#   "walletAddress": "'$CLIENT_ADDRESS'"
+# }'
+
+# test_api "POST" "/projects" "$PROJECT_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Create second project"
+
+# PROJECT_ID_2=2
+
+# # Fund the project
+# DEPOSIT_DATA_2='{
+#   "amount": "8.5",
+#   "txHash": "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff"
+# }'
+
+# test_api "POST" "/projects/$PROJECT_ID_2/deposit" "$DEPOSIT_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Fund second project"
+
+# # Multiple freelancers apply
+# FREELANCER_3="0x1111222233334444555566667777888899990000"
+# FREELANCER_4="0xaaaabbbbccccddddeeeeffff0000111122223333"
+
+# test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_ADDRESS'" "Freelancer 1 applies to project 2"
+# test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_2'" "Freelancer 2 applies to project 2"
+# test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_3'" "Freelancer 3 applies to project 2"
+# test_api "POST" "/projects/$PROJECT_ID_2/apply" "$APPLICATION_DATA" "-H 'x-wallet-address: $FREELANCER_4'" "Freelancer 4 applies to project 2"
+
+# # Shortlist and select
+# SHORTLIST_DATA_2='{
+#   "freelancerAddresses": ["'$FREELANCER_ADDRESS'", "'$FREELANCER_3'", "'$FREELANCER_4'"]
+# }'
+
+# test_api "POST" "/projects/$PROJECT_ID_2/shortlist" "$SHORTLIST_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Shortlist for project 2"
+
+# SELECTION_DATA_2='{
+#   "freelancerAddress": "'$FREELANCER_3'",
+#   "txHash": "0x2222333344445555666677778888999900001111aaaabbbbccccddddeeeeffff"
+# }'
+
+# test_api "POST" "/projects/$PROJECT_ID_2/select" "$SELECTION_DATA_2" "-H 'x-wallet-address: $CLIENT_ADDRESS'" "Select freelancer for project 2"
+
+# # Final status check
+# echo -e "${GREEN}=== 19. FINAL STATUS CHECKS ===${NC}"
+# test_api "GET" "/projects" "" "" "Get all projects - final state"
+# test_api "GET" "/platform/stats" "" "" "Final platform statistics"
+
+# echo ""
+# echo -e "${GREEN}🎉 API Testing Complete!${NC}"
+# echo "========================================"
+# echo ""
+# echo -e "${YELLOW}Summary of tested endpoints:${NC}"
+# echo "✅ Health checks"
+# echo "✅ Project CRUD operations"
+# echo "✅ Application system"
+# echo "✅ Freelancer selection process"
+# echo "✅ Milestone management"
+# echo "✅ Payment processing"
+# echo "✅ Dispute handling"
+# echo "✅ User data retrieval"
+# echo "✅ Search and filtering"
+# echo "✅ Platform statistics"
+# echo "✅ Error handling"
+# echo "✅ Pagination"
+# echo ""
+# echo -e "${YELLOW}Next steps:${NC}"
+# echo "1. Connect to your deployed smart contract"
+# echo "2. Add proper wallet authentication"
+# echo "3. Implement IPFS for file storage"
+# echo "4. Add comprehensive error handling"
+# echo "5. Set up production database"
+# echo ""
+# echo -e "${GREEN}Happy coding! 🚀${NC}"

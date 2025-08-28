@@ -48,6 +48,11 @@
     },
     {
       "inputs": [],
+      "name": "DisputedAmountExceedsMilestone",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "FreelancerAlreadySelected",
       "type": "error"
     },
@@ -64,6 +69,11 @@
     {
       "inputs": [],
       "name": "InvalidAmount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidDisputedAmount",
       "type": "error"
     },
     {
@@ -379,37 +389,6 @@
         }
       ],
       "name": "MilestoneExtensionRequested",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "uint256",
-          "name": "milestoneId",
-          "type": "uint256"
-        },
-        {
-          "indexed": true,
-          "internalType": "uint256",
-          "name": "projectId",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "finalSubmitTime",
-          "type": "uint256"
-        },
-        {
-          "indexed": false,
-          "internalType": "address",
-          "name": "freelancer",
-          "type": "address"
-        }
-      ],
-      "name": "MilestoneFinalSubmitted",
       "type": "event"
     },
     {
@@ -1027,19 +1006,6 @@
       "inputs": [
         {
           "internalType": "uint256",
-          "name": "_milestoneId",
-          "type": "uint256"
-        }
-      ],
-      "name": "finalSubmitMilestone",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "uint256",
           "name": "",
           "type": "uint256"
         }
@@ -1255,11 +1221,6 @@
             {
               "internalType": "uint256",
               "name": "deadline",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "finalSubmitTime",
               "type": "uint256"
             },
             {
@@ -1721,11 +1682,6 @@
         {
           "internalType": "uint256",
           "name": "deadline",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "finalSubmitTime",
           "type": "uint256"
         },
         {

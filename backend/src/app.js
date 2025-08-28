@@ -35,7 +35,7 @@ class HybridFreelancePlatform {
       // Connect to MongoDB
       await this.connectDatabase();
       // Setup blockchain sync
-      await this.setupBlockchainSync();
+      // await this.setupBlockchainSync();
       // Setup routes
       this.setupRoutes();
       // Setup error handling
