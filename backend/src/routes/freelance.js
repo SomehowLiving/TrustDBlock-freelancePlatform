@@ -407,7 +407,6 @@ router.get('/projects/:id', async (req, res) => {
 });
 
 // all project - blockchain
-
 // Get all projects with filtering
 router.get('/projects', async (req, res) => {
   try {
@@ -638,63 +637,11 @@ if (escrowAmount === undefined) {
   }
 });
 
-// Deposit funds to project -- works on blockchain (without mongodb)(tested)
-// router.post('/projects/:id/deposit', validateWallet, checkUserRegistration, async (req, res) => {
-//   try {
-//     const projectId = parseInt(req.params.id);
-//     const { amount } = req.body;
-
-//     if (!validateAmount(amount)) {
-//       return res.status(400).json({
-//         success: false,
-//         error: 'Valid amount required'
-//       });
-//     }
-
-//     const project = await freelancePlatformContract.getProject(projectId);
-
-//     if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
-//       return res.status(403).json({
-//         success: false,
-//         error: 'Only project client can deposit funds'
-//       });
-//     }
-
-//     // connect signer (must be funded)
-//     const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
-//     const freelancePlatformWithSigner = freelancePlatformContract.connect(signer);
-
-//     // 🔥 actually send the deposit transaction
-//     const tx = await freelancePlatformWithSigner.depositFunds(projectId, {
-//       value: ethers.parseEther(amount)
-//     });
-
-//     // wait for confirmation (optional, remove if you only need hash)
-//     const receipt = await tx.wait();
-
-//     // safely stringify project data
-//     const safeProject = JSON.parse(JSON.stringify(project, (key, value) =>
-//       typeof value === 'bigint' ? value.toString() : value
-//     ));
-
-//     res.json({
-//       success: true,
-//       message: 'Deposit transaction sent',
-//       transactionHash: tx.hash,
-//       blockNumber: receipt.blockNumber,
-//       gasUsed: receipt.gasUsed.toString(),
-//       project: safeProject
-//     });
-//   } catch (error) {
-//     handleError(error, res);
-//   }
-// });
-
 // 
-// Apply for project
+// Apply for project- hybrid -tested
 router.post('/projects/:id/apply', validateWallet, syncUser, async (req, res) => {
   try {
-    const projectId = req.params.id;
+    const onChainProjectId = parseInt(req.params.id, 10);
     const {
       coverLetter,
       proposedBudget,
@@ -709,15 +656,8 @@ router.post('/projects/:id/apply', validateWallet, syncUser, async (req, res) =>
       });
     }
 
-    // Find project
-    const project = await Project.findOne({
-      $or: [
-        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
-        { onChainId: parseInt(projectId) },
-        { projectId: parseInt(projectId) }
-      ]
-    });
-
+    // Step 1: Find project in DB
+    let project = await Project.findOne({ onChainId: onChainProjectId });
     if (!project) {
       return res.status(404).json({
         success: false,
@@ -725,36 +665,29 @@ router.post('/projects/:id/apply', validateWallet, syncUser, async (req, res) =>
       });
     }
 
-    if (project.client.address === req.userAddress) {
+    // Step 2: Validation
+    if (project.client.address.toLowerCase() === req.userAddress.toLowerCase()) {
       return res.status(400).json({
         success: false,
         error: 'Cannot apply to your own project'
       });
     }
 
-    if (project.status !== 'open') {
-      return res.status(400).json({
-        success: false,
-        error: 'Project is not accepting applications'
-      });
-    }
+    // Step 3: Prepare proposal + hash
+    const proposalData = {
+      coverLetter,
+      proposedBudget: proposedBudget || project.budget.total,
+      proposedTimeline: proposedTimeline || 30,
+      milestoneBreakdown,
+      freelancer: req.userAddress,
+      projectId: onChainProjectId,
+      timestamp: Date.now()
+    };
+    const proposalHash = generateProposalHash(proposalData);
 
-    // Check if already applied
-    const existingApplication = await Application.findOne({
-      projectId: project.onChainId || project.projectId,
-      'freelancer.wallet': req.userAddress
-    });
-
-    if (existingApplication) {
-      return res.status(409).json({
-        success: false,
-        error: 'Already applied to this project'
-      });
-    }
-
-    // Create application
-    const application = await Application.create({
-      projectId: project.onChainId || project.projectId,
+    // Step 4: Create Application doc (pending)
+    let application = await Application.create({
+      projectId: onChainProjectId,
       project: {
         title: project.title,
         budget: project.budget.total,
@@ -769,42 +702,217 @@ router.post('/projects/:id/apply', validateWallet, syncUser, async (req, res) =>
         proposedBudget: proposedBudget || project.budget.total,
         proposedTimeline: proposedTimeline || 30,
         milestoneBreakdown
+      },
+      blockchain: {
+        status: "pending",
+        txHash: null
       }
     });
 
-    // Generate proper proposal hash
-    const proposalData = {
-      coverLetter,
-      proposedBudget: proposedBudget || project.budget.total,
-      proposedTimeline: proposedTimeline || 30,
-      milestoneBreakdown,
-      freelancer: req.userAddress,
-      projectId: project.onChainId || project.projectId,
-      timestamp: Date.now()
-    };
-    const proposalHash = generateProposalHash(proposalData);
+    // Step 5: Send blockchain tx
+    const signer = new ethers.Wallet(process.env.FREELANCER_PRIVATE_KEY, provider);
+    const freelancePlatformWithSigner = freelancePlatformContract.connect(signer);
 
-    // Update project application count
-    project.applications.count = (project.applications.count || 0) + 1;
-    await project.save();
+    console.log(`Applying for project ${onChainProjectId} on-chain with hash ${proposalHash}`);
 
+    const tx = await freelancePlatformWithSigner.applyForProject(
+      onChainProjectId,
+      proposalHash,
+      { gasLimit: 300_000 }
+    );
+
+    console.log("Tx sent:", tx.hash);
+
+    // Save txHash immediately
+    application.blockchain.txHash = tx.hash;
+    application.blockchain.status = "pending";
+    await application.save();
+
+    // Respond to client immediately
     res.status(201).json({
       success: true,
-      data: {
-        application,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'applyForProject',
-          params: [project.onChainId || project.projectId, proposalHash],
-          address: CONTRACTS.freelancePlatform.address
-        }
-      },
-      message: 'Application submitted successfully'
+      data: { application, blockchain: { txHash: tx.hash } },
+      message: 'Application submitted, awaiting confirmation'
     });
+
+    // Step 6: Wait in background
+    const receipt = await tx.wait();
+
+    if (receipt.status === 1) {
+      console.log("Application confirmed:", receipt.transactionHash);
+      application.blockchain.status = "confirmed";
+      await application.save();
+
+      // update project applications count
+      project.applications.count = (project.applications.count || 0) + 1;
+      await project.save();
+    } else {
+      console.error("Tx reverted:", receipt.transactionHash);
+      application.blockchain.status = "failed";
+      await application.save();
+    }
+
   } catch (error) {
+    console.error("Application submission failed:", error);
     handleError(error, res, 'Application submission failed');
   }
 });
+//---------------------------- TTTTTTTTTTTTTTTTTTTTTTTTT under cunstruction TTTTTTTTTTTTTTTTTTTTTTTTT
+
+// --- SHORTLIST FREELANCERS ---
+router.post('/projects/:id/shortlist-freelancers', validateWallet, syncUser, async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { freelancers } = req.body;
+
+    if (!Array.isArray(freelancers) || freelancers.length === 0) {
+      return res.status(400).json({ success: false, error: 'Freelancers array is required' });
+    }
+
+    if (freelancers.length > 10) {
+      return res.status(400).json({ success: false, error: 'Cannot shortlist more than 10 freelancers' });
+    }
+
+    for (let addr of freelancers) {
+      if (!validateAddress(addr)) {
+        return res.status(400).json({ success: false, error: `Invalid freelancer address: ${addr}` });
+      }
+    }
+
+    const project = await Project.findOne({
+      $or: [
+        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
+        { onChainId: parseInt(projectId) },
+        { projectId: parseInt(projectId) }
+      ]
+    });
+
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
+    if (project.client.address !== req.userAddress) {
+      return res.status(403).json({ success: false, error: 'Only project client can shortlist freelancers' });
+    }
+    if (project.status !== 'open') {
+      return res.status(400).json({ success: false, error: 'Project is not accepting applications' });
+    }
+
+    // Verify all freelancers have applied
+    const applications = await Application.find({
+      projectId: project.onChainId || project.projectId,
+      'freelancer.wallet': { $in: freelancers.map(addr => addr.toLowerCase()) }
+    });
+    if (applications.length !== freelancers.length) {
+      return res.status(400).json({ success: false, error: 'All freelancers must have applied to the project' });
+    }
+
+    // ✅ Match contract: set status = "selecting"
+    project.status = 'selecting';
+    await project.save();
+
+    res.json({
+      success: true,
+      data: {
+        project,
+        shortlistedFreelancers: freelancers,
+        contractCall: {
+          contract: 'FreelancePlatform',
+          method: 'shortlistFreelancers',
+          params: [ project.onChainId || project.projectId, freelancers ],
+          address: CONTRACTS.freelancePlatform.address
+        }
+      },
+      message: 'Freelancers shortlisted successfully'
+    });
+
+  } catch (error) {
+    handleError(error, res, 'Freelancer shortlisting failed');
+  }
+});
+
+
+// --- SELECT FREELANCER ---
+router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const { freelancerAddress } = req.body;
+
+    if (!freelancerAddress || !validateAddress(freelancerAddress)) {
+      return res.status(400).json({ success: false, error: 'Valid freelancer address is required' });
+    }
+
+    const project = await Project.findOne({
+      $or: [
+        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
+        { onChainId: parseInt(projectId) },
+        { projectId: parseInt(projectId) }
+      ]
+    });
+
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
+    if (project.client.address !== req.userAddress) {
+      return res.status(403).json({ success: false, error: 'Only project client can select freelancer' });
+    }
+    if (project.freelancer && project.freelancer.address) {
+      return res.status(409).json({ success: false, error: 'Freelancer already selected for this project' });
+    }
+
+    // ✅ Require funded project before selection
+    if (!project.budget.escrowBalance || project.budget.escrowBalance <= 0) {
+      return res.status(400).json({ success: false, error: 'Project not funded' });
+    }
+
+    if (!['open', 'selecting'].includes(project.status)) {
+      return res.status(400).json({ success: false, error: 'Project is not accepting freelancer selection' });
+    }
+
+    const application = await Application.findOne({
+      projectId: project.onChainId || project.projectId,
+      'freelancer.wallet': freelancerAddress.toLowerCase()
+    });
+    if (!application) {
+      return res.status(400).json({ success: false, error: 'Freelancer has not applied for this project' });
+    }
+
+    // ✅ Match contract rules
+    if (project.status === 'selecting') {
+      // Ensure freelancer is actually shortlisted
+      if (!application.status || application.status !== 'shortlisted') {
+        return res.status(400).json({ success: false, error: 'Freelancer was not shortlisted' });
+      }
+    }
+
+    // Update project
+    project.freelancer = {
+      address: freelancerAddress.toLowerCase(),
+      displayName: application.freelancer.displayName
+    };
+    project.status = 'negotiating';
+    await project.save();
+
+    // Update application status
+    application.status = 'selected';
+    await application.save();
+
+    res.json({
+      success: true,
+      data: {
+        project,
+        selectedFreelancer: application.freelancer,
+        contractCall: {
+          contract: 'FreelancePlatform',
+          method: 'selectFreelancer',
+          params: [ project.onChainId || project.projectId, freelancerAddress ],
+          address: CONTRACTS.freelancePlatform.address
+        }
+      },
+      message: 'Freelancer selected successfully. Awaiting freelancer acceptance.'
+    });
+
+  } catch (error) {
+    handleError(error, res, 'Freelancer selection failed');
+  }
+});
+
+//------------------------------
 
 router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (req, res) => {
   try {
@@ -2020,3 +2128,75 @@ router.post('/calculate-fees', async (req, res) => {
 
 
 module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Deposit funds to project -- works on blockchain (without mongodb)(tested)
+// router.post('/projects/:id/deposit', validateWallet, checkUserRegistration, async (req, res) => {
+//   try {
+//     const projectId = parseInt(req.params.id);
+//     const { amount } = req.body;
+
+//     if (!validateAmount(amount)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Valid amount required'
+//       });
+//     }
+
+//     const project = await freelancePlatformContract.getProject(projectId);
+
+//     if (project.client.toLowerCase() !== req.userAddress.toLowerCase()) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can deposit funds'
+//       });
+//     }
+
+//     // connect signer (must be funded)
+//     const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
+//     const freelancePlatformWithSigner = freelancePlatformContract.connect(signer);
+
+//     // 🔥 actually send the deposit transaction
+//     const tx = await freelancePlatformWithSigner.depositFunds(projectId, {
+//       value: ethers.parseEther(amount)
+//     });
+
+//     // wait for confirmation (optional, remove if you only need hash)
+//     const receipt = await tx.wait();
+
+//     // safely stringify project data
+//     const safeProject = JSON.parse(JSON.stringify(project, (key, value) =>
+//       typeof value === 'bigint' ? value.toString() : value
+//     ));
+
+//     res.json({
+//       success: true,
+//       message: 'Deposit transaction sent',
+//       transactionHash: tx.hash,
+//       blockNumber: receipt.blockNumber,
+//       gasUsed: receipt.gasUsed.toString(),
+//       project: safeProject
+//     });
+//   } catch (error) {
+//     handleError(error, res);
+//   }
+// });

@@ -405,6 +405,17 @@ const applicationSchema = new mongoose.Schema({
       answer: String,
       askedAt: Date
     }]
+  },
+  blockchain: {
+    status: {
+      type: String,
+      enum: ['pending', 'confirmed', 'failed'],
+      default: 'pending'
+    },
+    txHash: {
+      type: String,
+      default: null
+    }
   }
 });
 
