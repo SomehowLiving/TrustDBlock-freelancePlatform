@@ -74,7 +74,8 @@ const config: HardhatUserConfig = {
     },
     //-------------- for avalanche subnet ----------------------
     localSubnet: {
-      url: "http://127.0.0.1:9650/ext/bc/C/rpc",
+      // url: "http://127.0.0.1:9650/ext/bc/C/rpc"
+      url : "http://scaling-space-funicular-5g946p64pvppcpvx7-9650.preview.app.github.dev/ext/bc/C/rpc",
       accounts: process.env.AVALANCHE_PRIVATE_KEY
         ? [`0x${process.env.AVALANCHE_PRIVATE_KEY}`]
         : [],
