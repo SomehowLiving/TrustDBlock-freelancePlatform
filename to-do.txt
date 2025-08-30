@@ -26,8 +26,27 @@ curl -X POST "http://localhost:3000/api/users/register" \
   }'
 
 //----------------------Project Routes-----------------------
+
+curl -X POST http://localhost:3000/api/projects \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE" \
+  -d '{
+    "title": "E-commerce Website Development",
+    "description": "Build a responsive shopping website with payment integration",
+    "budget": 0.05,
+    "category": "Web Development",
+    "skills": ["React", "Node.js", "Solidity"],
+    "requirements": ["Responsive UI", "Blockchain payments"],
+    "timeline": {
+      "deadline": "2025-09-30T23:59:59Z",
+      "applicationDeadline": "2025-09-10T23:59:59Z"
+    },
+    "expectedMilestones": 2
+  }'
+
+
 Deposit Funds (3% fee deducted)
-curl -X POST http://localhost:3000/api/projects/3/deposit \
+curl -X POST http://localhost:3000/api/projects/1/deposit \
   -H "Content-Type: application/json" \
   -H "x-wallet-address: 0x496ba83da236cff6a0efff3edea427bcad96eefe" \
   -d '{"amount": "0.05"}'
@@ -66,12 +85,11 @@ curl -X POST http://localhost:3000/api/projects/1/apply \
   -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079" \
   -d '{
     "coverLetter": "I would like to apply with a simple milestone structure.",
-    "proposedBudget": 15,
-    "proposedTimeline": 15,
+    "proposedBudget": 0.06,
+    "proposedTimeline": 3,
     "milestoneBreakdown": [
-      { "title": "Phase 1: Kickoff", "amount": 3, "timeline": 5 },
-      { "title": "Phase 2: Development", "amount": 1.5, "timeline": 5 },
-      { "title": "Phase 3: Delivery", "amount": 5, "timeline": 5 }
+      { "title": "Phase 1: Kickoff", "amount": 3.5, "timeline": 5 },
+      { "title": "Phase 2: Development", "amount": 1.5, "timeline": 5 }
     ]
   }'
 
@@ -117,7 +135,7 @@ curl -X POST http://localhost:3000/api/projects/1/milestones \
     ]
   }'
 
-🪙 Milestone Routes
+//-----------Milestone Routes-----------
 Submit Milestone Work
 curl -X POST http://localhost:3000/api/milestones/1/submit \
   -H "Content-Type: application/json" \
