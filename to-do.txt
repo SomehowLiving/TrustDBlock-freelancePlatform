@@ -1,0 +1,137 @@
+1. C-Chain only (easiest)
+
+Just deploy your Solidity contracts (escrow, NFT, dispute) like on Ethereum.
+
+Use Avalanche Fuji Testnet for hackathon.
+
+Tools: Hardhat/Truffle + MetaMask/Core Wallet.
+
+Difficulty: beginner-friendly, quick.
+
+Downside: Looks like “just another EVM dApp.”
+
+2. Subnet, default config (medium)
+
+Avalanche has the Subnet-EVM tool, which is like “EVM in a box.”
+
+You don’t have to code consensus; it auto-generates a subnet with an Ethereum-like VM.
+
+Steps:
+
+Install Avalanche CLI (avalanche subnet create).
+
+Configure your gas token + chain params.
+
+Deploy your Solidity contracts on that subnet.
+
+Difficulty: Intermediate (a few days to learn, manageable in a hackathon if you focus).
+
+Upside: Huge hackathon points since you’re showing subnet usage.
+
+
+
+1. What is a Subnet-EVM?
+
+It’s essentially a custom EVM blockchain running inside Avalanche.
+
+You can deploy your Solidity contracts here just like Ethereum, but:
+
+You control the validators (even if just one for hackathon).
+
+You can configure gas token (ETN, AVAX, or even your own).
+
+Fees are predictable and low because you control the network parameters.
+
+Think of it as your own mini Ethereum inside Avalanche.
+
+2. Benefits for TrustDBlock
+
+Ultra-low gas fees for freelancers.
+
+Fast finality (~1 sec).
+
+Customizable token for paying gas → no need for users to have AVAX.
+
+Hackathon points: judges will see subnet usage, not just a C-Chain dApp.
+
+3. High-Level Setup Steps
+Step 1: Install Avalanche CLI
+# Install avalanche CLI globally
+npm install -g avalanche-cli
+
+
+You’ll use this to create, configure, and deploy subnets.
+
+Step 2: Create a New Subnet
+avalanche subnet create
+
+
+The CLI will guide you through:
+
+Subnet name (e.g., trustdblock-payments)
+
+Chain type: choose EVM
+
+Validators: for hackathon, you can use 1 local node
+
+Gas token: pick AVAX, ETN, or a custom token
+
+This will generate a config folder with genesis.json and chain params.
+
+Step 3: Launch Local Test Subnet
+avalanche subnet start <subnet-name>
+
+
+Starts a local Avalanche node running your subnet.
+
+You can connect MetaMask or Core Wallet to this subnet by adding the RPC URL.
+
+Step 4: Deploy Smart Contracts
+
+Same workflow as Ethereum or C-Chain:
+
+Configure Hardhat/Truffle to point to your subnet RPC.
+
+Compile Solidity contracts (escrow, NFT, dispute).
+
+Deploy to your local subnet.
+
+Example Hardhat config:
+
+module.exports = {
+  networks: {
+    localSubnet: {
+      url: "http://127.0.0.1:9650/ext/bc/C/rpc",
+      accounts: [process.env.PRIVATE_KEY]
+    }
+  },
+  solidity: "0.8.19",
+};
+
+Step 5: Test & Demo
+
+Test transactions, escrow flows, NFT minting on the subnet.
+
+Users can connect MetaMask or Core Wallet to your subnet RPC.
+
+4. Optional: Deploy to Public Testnet
+
+Avalanche allows you to deploy your subnet publicly on Fuji Testnet if you want external users to interact.
+
+You just need to configure validator keys and deploy using CLI.
+
+Hackathon judges can then connect directly and see your custom subnet in action.
+
+5. Hackathon Tips
+
+Start local → demo your app flows on subnet.
+
+Highlight subnet usage in slides:
+
+Low gas fees
+
+Custom token payments
+
+Separate payment chain → shows modular design
+
+Optional: Add ICM later to show cross-subnet communication (even if mocked).
