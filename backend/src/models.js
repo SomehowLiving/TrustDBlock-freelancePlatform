@@ -239,7 +239,7 @@ const projectSchema = new mongoose.Schema({
     type: String,
     enum: [
       'created', 'open', 'funded', 'active', 'completed', 'cancelled', 'disputed',
-      'Draft', 'Open', 'Selecting', 'Negotiating', 'Active', 'Completed', 'Cancelled'
+      'Draft', 'Open', 'Selecting', 'Accepted', 'Negotiating', 'Active', 'Completed', 'Cancelled'
     ],
     default: 'created',
     index: true

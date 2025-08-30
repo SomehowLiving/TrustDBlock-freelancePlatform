@@ -756,171 +756,7 @@ router.post('/projects/:id/apply', validateWallet, syncUser, async (req, res) =>
     handleError(error, res, 'Application submission failed');
   }
 });
-//---------------------------- TTTTTTTTTTTTTTTTTTTTTTTTT under cunstruction TTTTTTTTTTTTTTTTTTTTTTTTT
-
-// // --- SHORTLIST FREELANCERS ---
-// router.post('/projects/:id/shortlist-freelancers', validateWallet, syncUser, async (req, res) => {
-//   try {
-//     // const projectId = req.params.id;
-//     const onChainProjectId = parseInt(req.params.id, 10);
-//     const { freelancers } = req.body;
-
-//     if (!Array.isArray(freelancers) || freelancers.length === 0) {
-//       return res.status(400).json({ success: false, error: 'Freelancers array is required' });
-//     }
-
-//     if (freelancers.length > 10) {
-//       return res.status(400).json({ success: false, error: 'Cannot shortlist more than 10 freelancers' });
-//     }
-
-//     for (let addr of freelancers) {
-//       if (!validateAddress(addr)) {
-//         return res.status(400).json({ success: false, error: `Invalid freelancer address: ${addr}` });
-//       }
-//     }
-
-//     // const project = await Project.findOne({
-//     //   $or: [
-//     //     { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
-//     //     { onChainId: parseInt(projectId) },
-//     //     { projectId: parseInt(projectId) }
-//     //   ]
-//     // });
-//     let project = await Project.findOne({ onChainId: onChainProjectId });
-//     if (!project) {
-//       return res.status(404).json({
-//         success: false,
-//         error: 'Project not found'
-//       });
-//     }
-
-//     // if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
-//     // if (project.client.address.toLowerCase() === req.userAddress.toLowerCase()) {
-//     //   return res.status(400).json({
-//     //     success: false,
-//     //     error: 'Cannot apply to your own project'
-//     //   });
-//     // }
-
-//     // Verify all freelancers have applied
-//     const applications = await Application.find({
-//       projectId: project.onChainId || project.projectId,
-//       'freelancer.wallet': { $in: freelancers.map(addr => addr.toLowerCase()) }
-//     });
-//     // if (applications.length !== freelancers.length) {
-//     //   return res.status(400).json({ success: false, error: 'All freelancers must have applied to the project' });
-//     // }
-
-//     // ✅ Match contract: set status = "selecting"
-//     project.status = 'Selecting';
-//     await project.save();
-
-//     res.json({
-//       success: true,
-//       data: {
-//         project,
-//         shortlistedFreelancers: freelancers,
-//         contractCall: {
-//           contract: 'FreelancePlatform',
-//           method: 'shortlistFreelancers',
-//           params: [ project.onChainId || project.projectId, freelancers ],
-//           address: CONTRACTS.freelancePlatform.address
-//         }
-//       },
-//       message: 'Freelancers shortlisted successfully'
-//     });
-
-//   } catch (error) {
-//     handleError(error, res, 'Freelancer shortlisting failed');
-//   }
-// });
-
-// // --- SELECT FREELANCER ---
-// router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (req, res) => {
-//   try {
-//     const onChainProjectId = parseInt(req.params.id, 10);
-//     const { freelancerAddress } = req.body;
-
-//     if (!freelancerAddress || !validateAddress(freelancerAddress)) {
-//       return res.status(400).json({ success: false, error: 'Valid freelancer address is required' });
-//     }
-
-//     let project = await Project.findOne({ onChainId: onChainProjectId });
-//     if (!project) {
-//       return res.status(404).json({
-//         success: false,
-//         error: 'Project not found'
-//       });
-//     }
-
-//     if (project.client.address.toLowerCase() === req.userAddress.toLowerCase()) {
-//       return res.status(400).json({
-//         success: false,
-//         error: 'Cannot apply to your own project'
-//       });
-//     }
-
-//     if (project.freelancer && project.freelancer.address) {
-//       return res.status(409).json({ success: false, error: 'Freelancer already selected for this project' });
-//     }
-
-//     // ✅ Require funded project before selection
-//     if (!project.budget.escrowBalance || project.budget.escrowBalance <= 0) {
-//       return res.status(400).json({ success: false, error: 'Project not funded' });
-//     }
-
-//     // if (!['open', 'selecting'].includes(project.status)) {
-//     //   return res.status(400).json({ success: false, error: 'Project is not accepting freelancer selection' });
-//     // }
-
-//     const application = await Application.findOne({
-//       projectId: onChainProjectId,
-//       'freelancer.wallet': freelancerAddress.toLowerCase()
-//     });
-//     if (!application) {
-//       return res.status(400).json({ success: false, error: 'Freelancer has not applied for this project' });
-//     }
-
-//     // ✅ Match contract rules
-//     if (project.status === 'selecting') {
-//       // Ensure freelancer is actually shortlisted
-//       if (!application.status || application.status !== 'shortlisted') {
-//         return res.status(400).json({ success: false, error: 'Freelancer was not shortlisted' });
-//       }
-//     }
-
-//     // Update project
-//     project.freelancer = {
-//       address: freelancerAddress.toLowerCase(),
-//       displayName: application.freelancer.displayName
-//     };
-//     project.status = 'negotiating';
-//     await project.save();
-
-//     // Update application status
-//     application.status = 'selected';
-//     await application.save();
-
-//     res.json({
-//       success: true,
-//       data: {
-//         project,
-//         selectedFreelancer: application.freelancer,
-//         contractCall: {
-//           contract: 'FreelancePlatform',
-//           method: 'selectFreelancer',
-//           params: [ project.onChainId || project.projectId, freelancerAddress ],
-//           address: CONTRACTS.freelancePlatform.address
-//         }
-//       },
-//       message: 'Freelancer selected successfully. Awaiting freelancer acceptance.'
-//     });
-
-//   } catch (error) {
-//     handleError(error, res, 'Freelancer selection failed');
-//   }
-// });
-
+// tested 
 // --- SHORTLIST FREELANCERS (On-chain) ---
 router.post('/projects/:id/shortlist-freelancers', validateWallet, syncUser, async (req, res) => {
   try {
@@ -987,7 +823,6 @@ router.post('/projects/:id/shortlist-freelancers', validateWallet, syncUser, asy
     handleError(error, res, 'Freelancer shortlisting failed');
   }
 });
-
 
 // --- SELECT FREELANCER (On-chain) ---
 router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (req, res) => {
@@ -1102,65 +937,129 @@ router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (
 
 
 //Accept Project (Freelancer accepting selected project)
+// router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) => {
+//   try {
+//     const projectId = req.params.id;
+
+//     // Find project
+//     const project = await Project.findOne({
+//       $or: [
+//         { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
+//         { onChainId: parseInt(projectId) },
+//         { projectId: parseInt(projectId) }
+//       ]
+//     });
+
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Project not found'
+//       });
+//     }
+
+//     if (!project.freelancer || project.freelancer.address !== req.userAddress) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only selected freelancer can accept project'
+//       });
+//     }
+
+//     if (project.status !== 'negotiating') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Project is not in negotiating status'
+//       });
+//     }
+
+//     // Update project status
+//     project.status = 'accepted';
+//     project.timeline.acceptedAt = new Date();
+//     await project.save();
+
+//     // Contract call for acceptance
+//     res.json({
+//       success: true,
+//       data: {
+//         project,
+//         contractCall: {
+//           contract: 'FreelancePlatform',
+//           method: 'acceptProject',
+//           params: [
+//             project.onChainId || project.projectId  // _projectId (uint256)
+//           ],
+//           address: CONTRACTS.freelancePlatform.address
+//         }
+//       },
+//       message: 'Project accepted successfully. Ready for milestone planning.'
+//     });
+//   } catch (error) {
+//     handleError(error, res, 'Project acceptance failed');
+//   }
+// });
+// --- ACCEPT PROJECT (On-chain) ---
 router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) => {
   try {
-    const projectId = req.params.id;
-
-    // Find project
-    const project = await Project.findOne({
-      $or: [
-        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
-        { onChainId: parseInt(projectId) },
-        { projectId: parseInt(projectId) }
-      ]
-    });
-
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        error: 'Project not found'
-      });
+    const onChainProjectId = parseInt(req.params.id, 10);
+     // Add this check immediately
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
     }
+    
+    const userAddress = req.userAddress.toLowerCase();
 
-    if (!project.freelancer || project.freelancer.address !== req.userAddress) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only selected freelancer can accept project'
-      });
-    }
+    // Find project by onChainId only
+    const project = await Project.findOne({ onChainId: onChainProjectId });
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
 
-    if (project.status !== 'negotiating') {
-      return res.status(400).json({
-        success: false,
-        error: 'Project is not in negotiating status'
-      });
-    }
+    // Only selected freelancer can accept
+    // if (!project.freelancer || project.freelancer.address.toLowerCase() !== userAddress) {
+    //   return res.status(403).json({ success: false, error: 'Only selected freelancer can accept project' });
+    // }
 
-    // Update project status
-    project.status = 'accepted';
+    // if (project.status !== 'Negotiating') {
+    //   return res.status(400).json({ success: false, error: 'Project is not in negotiating status' });
+    // }
+
+    // --- Blockchain Interaction ---
+    const signer = new ethers.Wallet(process.env.FREELANCER_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
+
+    const tx = await contractWithSigner.acceptProject(onChainProjectId);
+    console.log('Tx sent:', tx.hash);
+
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
+
+    // Parse event
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); } 
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'FreelancerAcceptedProject');
+
+    if (!event) throw new Error('FreelancerAcceptedProject event not found in receipt');
+
+    // Update MongoDB
+    project.status = 'Accepted';
     project.timeline.acceptedAt = new Date();
+    project.blockchain.status = 'confirmed';
+    project.blockchain.txHash = tx.hash;
     await project.save();
 
-    // Contract call for acceptance
     res.json({
       success: true,
-      data: {
-        project,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'acceptProject',
-          params: [
-            project.onChainId || project.projectId  // _projectId (uint256)
-          ],
-          address: CONTRACTS.freelancePlatform.address
-        }
-      },
-      message: 'Project accepted successfully. Ready for milestone planning.'
+      data: { project, txHash: tx.hash, eventArgs: event.args },
+      message: 'Project accepted on-chain successfully. Ready for milestone planning.'
     });
+
   } catch (error) {
+    console.error('Project acceptance failed:', error);
     handleError(error, res, 'Project acceptance failed');
   }
 });
+
+
 // ==================== MILESTONE ROUTES ====================
 
 // Create milestones
