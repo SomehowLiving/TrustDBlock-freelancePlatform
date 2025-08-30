@@ -937,65 +937,6 @@ router.post('/projects/:id/select-freelancer', validateWallet, syncUser, async (
 
 
 //Accept Project (Freelancer accepting selected project)
-// router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) => {
-//   try {
-//     const projectId = req.params.id;
-
-//     // Find project
-//     const project = await Project.findOne({
-//       $or: [
-//         { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
-//         { onChainId: parseInt(projectId) },
-//         { projectId: parseInt(projectId) }
-//       ]
-//     });
-
-//     if (!project) {
-//       return res.status(404).json({
-//         success: false,
-//         error: 'Project not found'
-//       });
-//     }
-
-//     if (!project.freelancer || project.freelancer.address !== req.userAddress) {
-//       return res.status(403).json({
-//         success: false,
-//         error: 'Only selected freelancer can accept project'
-//       });
-//     }
-
-//     if (project.status !== 'negotiating') {
-//       return res.status(400).json({
-//         success: false,
-//         error: 'Project is not in negotiating status'
-//       });
-//     }
-
-//     // Update project status
-//     project.status = 'accepted';
-//     project.timeline.acceptedAt = new Date();
-//     await project.save();
-
-//     // Contract call for acceptance
-//     res.json({
-//       success: true,
-//       data: {
-//         project,
-//         contractCall: {
-//           contract: 'FreelancePlatform',
-//           method: 'acceptProject',
-//           params: [
-//             project.onChainId || project.projectId  // _projectId (uint256)
-//           ],
-//           address: CONTRACTS.freelancePlatform.address
-//         }
-//       },
-//       message: 'Project accepted successfully. Ready for milestone planning.'
-//     });
-//   } catch (error) {
-//     handleError(error, res, 'Project acceptance failed');
-//   }
-// });
 // --- ACCEPT PROJECT (On-chain) ---
 router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) => {
   try {
@@ -1063,10 +1004,16 @@ router.post('/projects/:id/accept', validateWallet, syncUser, async (req, res) =
 // ==================== MILESTONE ROUTES ====================
 
 // Create milestones
+//----------working on chain -gotta fix  mongodb status with it----
 router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, res) => {
   try {
-    const projectId = req.params.id;
-    const { milestones, txHash } = req.body;
+    const onChainProjectId = parseInt(req.params.id, 10);
+    const { milestones } = req.body;
+
+    // Add defensive check for userAddress
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
+    }
 
     if (!Array.isArray(milestones) || milestones.length === 0) {
       return res.status(400).json({
@@ -1075,15 +1022,8 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
       });
     }
 
-    // Find project
-    const project = await Project.findOne({
-      $or: [
-        { _id: projectId.match(/^[0-9a-fA-F]{24}$/) ? projectId : null },
-        { onChainId: parseInt(projectId) },
-        { projectId: parseInt(projectId) }
-      ]
-    });
-
+    // Find project by onChainId only (like your other routes)
+    const project = await Project.findOne({ onChainId: onChainProjectId });
     if (!project) {
       return res.status(404).json({
         success: false,
@@ -1091,15 +1031,34 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
       });
     }
 
-    if (project.client.address !== req.userAddress) {
+    // Only project client can create milestones
+    if (project.client.address.toLowerCase() !== req.userAddress.toLowerCase()) {
       return res.status(403).json({
         success: false,
         error: 'Only project client can create milestones'
       });
     }
 
-    // Validate milestones
+    // Check project status - should be Negotiating and freelancer should have accepted
+    // if (project.status !== 'Negotiating') {
+    //   return res.status(400).json({
+    //     success: false,
+    //     error: 'Project must be in Negotiating status'
+    //   });
+    // }
+
+    // if (!project.freelancer || !project.freelancer.address) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     error: 'No freelancer selected for this project'
+    //   });
+    // }
+
+    // Validate milestones and prepare contract data
     let totalAmount = 0;
+    const amounts = [];
+    const deadlines = [];
+    const metadataHashes = [];
     const validatedMilestones = [];
 
     for (let i = 0; i < milestones.length; i++) {
@@ -1112,17 +1071,29 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
         });
       }
 
-      if (!validateAmount(milestone.amount)) {
+      const amount = parseFloat(milestone.amount);
+      if (isNaN(amount) || amount <= 0) {
         return res.status(400).json({
           success: false,
           error: `Invalid amount for milestone: ${milestone.title}`
         });
       }
 
-      totalAmount += parseFloat(milestone.amount);
+      const deadline = new Date(milestone.deadline);
+      if (deadline <= new Date()) {
+        return res.status(400).json({
+          success: false,
+          error: `Deadline must be in the future for milestone: ${milestone.title}`
+        });
+      }
+
+      totalAmount += amount;
+      amounts.push(ethers.parseEther(amount.toString()));
+      deadlines.push(Math.floor(deadline.getTime() / 1000));
+      metadataHashes.push(`QmMilestone${i + 1}_${Date.now()}`); // Simple hash for now
 
       validatedMilestones.push({
-        projectId: project.onChainId || project.projectId,
+        projectId: onChainProjectId,
         project: {
           title: project.title,
           client: project.client.address,
@@ -1132,52 +1103,96 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
         details: {
           title: milestone.title,
           description: milestone.description || '',
-          amount: parseFloat(milestone.amount),
+          amount: amount,
           order: i + 1
         },
         timeline: {
-          deadline: new Date(milestone.deadline)
+          deadline: deadline
         },
-        status: 'pending'
+        status: 'pending',
+        blockchain: {
+          status: 'pending',
+          txHash: null
+        }
       });
     }
 
-    // Check total amount
-    if (totalAmount > project.budget.escrowBalance) {
+    // Check total amount against escrow balance
+    if (project.budget.escrowBalance && totalAmount > project.budget.escrowBalance) {
       return res.status(400).json({
         success: false,
-        error: `Total milestone amount (${totalAmount}) exceeds escrow balance`
+        error: `Total milestone amount (${totalAmount}) exceeds escrow balance (${project.budget.escrowBalance})`
       });
     }
 
-    // Create milestones in MongoDB
-    const createdMilestones = await Milestone.insertMany(validatedMilestones);
-    // Update project
-    project.status = 'active';
-    project.milestones.total = createdMilestones.length;
-    project.blockchain.txHash = txHash;
-    await project.save();
+    // --- Blockchain Interaction ---
+    const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    // Prepare blockchain data
-    const amounts = milestones.map(m => parseEther(m.amount).toString());
-    const deadlines = milestones.map(m => Math.floor(new Date(m.deadline).getTime() / 1000));
-    const metadataHashes = milestones.map((m, i) => `QmMilestone${i}`);
+    console.log(`Creating milestones for project ${onChainProjectId} on-chain`);
+    const tx = await contractWithSigner.agreeMilestones(
+      onChainProjectId,
+      amounts,
+      deadlines,
+      metadataHashes
+    );
+
+    console.log('Tx sent:', tx.hash);
+
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
+
+    // Parse events
+    const milestonesAgreedEvent = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'MilestonesAgreed');
+
+    const projectActivatedEvent = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'ProjectActivated');
+
+    if (!milestonesAgreedEvent) {
+      throw new Error('MilestonesAgreed event not found in receipt');
+    }
+
+    // Create milestones in MongoDB with confirmed blockchain status
+    const milestonesToSave = validatedMilestones.map(milestone => ({
+      ...milestone,
+      blockchain: {
+        status: 'confirmed',
+        txHash: tx.hash
+      }
+    }));
+
+    const createdMilestones = await Milestone.insertMany(milestonesToSave);
+
+    // Update project status
+    project.status = 'Active';
+    project.milestones.total = createdMilestones.length;
+    project.timeline.activatedAt = new Date();
+    project.blockchain.status = 'confirmed';
+    project.blockchain.txHash = tx.hash;
+    await project.save();
 
     res.json({
       success: true,
-      data: {
-        project,
+      data: { 
+        project, 
         milestones: createdMilestones,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'agreeMilestones',
-          params: [project.onChainId || project.projectId, amounts, deadlines, metadataHashes],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash: tx.hash,
+        eventArgs: milestonesAgreedEvent.args
       },
-      message: 'Milestones created successfully'
+      message: 'Milestones created and agreed on-chain successfully. Project is now active.'
     });
+
   } catch (error) {
+    console.error('Milestone creation failed:', error);
     handleError(error, res, 'Milestone creation failed');
   }
 });
