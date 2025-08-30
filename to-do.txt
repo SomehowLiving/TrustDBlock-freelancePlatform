@@ -1,3 +1,171 @@
+//---------------------User Routes----------------
+Register Freelancer
+curl -X POST "http://localhost:3000/api/users/register" \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079" \
+  -d '{
+    "username":"alice",
+    "email":"alice@example.com",
+    "password":"supersecret123",
+    "role":"freelancer",
+    "bio":"Full-stack developer with 5 years experience",
+    "skills":["React","Node.js","Solidity"]
+  }'
+
+Register Client
+curl -X POST "http://localhost:3000/api/users/register" \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE" \
+  -d '{
+    "username": "nidhi",
+    "email": "nidhi@example.com",
+    "password": "supersecret123",
+    "role": "client",
+    "bio": "Looking to hire top freelance talent",
+    "skills": []
+  }'
+
+//----------------------Project Routes-----------------------
+Deposit Funds (3% fee deducted)
+curl -X POST http://localhost:3000/api/projects/3/deposit \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496ba83da236cff6a0efff3edea427bcad96eefe" \
+  -d '{"amount": "0.05"}'
+
+Get Project Details
+curl -X GET http://localhost:3000/api/projects/1
+curl -X GET http://localhost:3000/api/projects/2
+
+Apply to Project 
+curl -X POST http://localhost:3000/api/projects/1/apply \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079" \
+  -d '{
+    "coverLetter": "I can complete this project within 5 days.",
+    "proposedBudget": 0.05,
+    "proposedTimeline": 5,
+    "milestoneBreakdown": [
+      {
+        "title": "Initial Setup",
+        "description": "Set up project foundation and structure",
+        "amount": 0.02,
+        "deadline": "2025-08-29"
+      },
+      {
+        "title": "Final Delivery",
+        "description": "Deliver completed shopping website",
+        "amount": 0.03,
+        "deadline": "2025-08-29"
+      }
+    ]
+  }'
+
+Apply to Project
+curl -X POST http://localhost:3000/api/projects/1/apply \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079" \
+  -d '{
+    "coverLetter": "I would like to apply with a simple milestone structure.",
+    "proposedBudget": 15,
+    "proposedTimeline": 15,
+    "milestoneBreakdown": [
+      { "title": "Phase 1: Kickoff", "amount": 3, "timeline": 5 },
+      { "title": "Phase 2: Development", "amount": 1.5, "timeline": 5 },
+      { "title": "Phase 3: Delivery", "amount": 5, "timeline": 5 }
+    ]
+  }'
+
+Shortlist Freelancers
+curl -X POST http://localhost:3000/api/projects/1/shortlist-freelancers \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE" \
+  -d '{
+    "freelancers": [
+      "0xF708059673F78fc8bB01CF56C315519312E58079"
+    ]
+  }'
+
+Select Freelancer
+curl -X POST http://localhost:3000/api/projects/1/select-freelancer \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE" \
+  -d '{"freelancerAddress": "0xF708059673F78fc8bB01CF56C315519312E58079"}'
+
+Freelancer Accepts Project
+curl -X POST http://localhost:3000/api/projects/1/accept \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079"
+
+Create Milestones
+curl -X POST http://localhost:3000/api/projects/1/milestones \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE" \
+  -d '{
+    "milestones": [
+      {
+        "title": "Design Homepage",
+        "description": "Create a responsive homepage design",
+        "amount": 0.025,
+        "deadline": "2025-09-15T23:59:59Z"
+      },
+      {
+        "title": "Implement Homepage",
+        "description": "Convert design into working React components",
+        "amount": 0.02,
+        "deadline": "2025-09-30T23:59:59Z"
+      }
+    ]
+  }'
+
+🪙 Milestone Routes
+Submit Milestone Work
+curl -X POST http://localhost:3000/api/milestones/1/submit \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079" \
+  -d '{
+    "notes": "Completed the homepage design. Attached mockups.",
+    "files": [
+      {
+        "name": "homepage.png",
+        "hash": "QmExampleFileHash123"
+      },
+      {
+        "name": "homepage.png",
+        "hash": "QmExampleFileHash123",
+        "url": "https://example.com/homepage.png",
+        "type": "image/png",
+        "size": 204800
+      }
+    ]
+  }'
+
+Approve Milestone
+curl -X POST http://localhost:3000/api/milestones/1/approve \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0x496bA83da236cFF6a0efFf3Edea427bcAd96eeFE"
+
+Release Milestone Payment
+curl -X POST http://localhost:3000/api/milestones/1/release \
+  -H "Content-Type: application/json" \
+  -H "x-wallet-address: 0xF708059673F78fc8bB01CF56C315519312E58079"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 1. C-Chain only (easiest)
 
 Just deploy your Solidity contracts (escrow, NFT, dispute) like on Ethereum.

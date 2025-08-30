@@ -1456,103 +1456,156 @@ router.post('/milestones/:id/auto-approve', validateWallet, syncUser, async (req
 });
 
 // Release payment
+// router.post('/milestones/:id/release', validateWallet, syncUser, async (req, res) => {
+//   try {
+//     const milestoneId = req.params.id;
+
+//     // Find milestone
+//     const milestone = await Milestone.findOne({
+//       $or: [
+//         { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
+//         { onChainId: parseInt(milestoneId) },
+//         { milestoneId: parseInt(milestoneId) }
+//       ]
+//     });
+
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     // Get project to verify client
+//     const project = await Project.findOne({
+//       $or: [
+//         { onChainId: milestone.projectId },
+//         { projectId: milestone.projectId }
+//       ]
+//     });
+
+//     if (!project || project.client.address !== req.userAddress) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can release payments'
+//       });
+//     }
+
+//     if (milestone.status !== 'approved') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone must be approved before payment release'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = 'paid';
+//     milestone.timeline.paidAt = new Date();
+
+//     await milestone.save();
+
+//     // Update project milestone completion
+//     const completedMilestones = await Milestone.countDocuments({
+//       projectId: milestone.projectId,
+//       status: 'paid'
+//     });
+
+//     project.milestones.completed = completedMilestones;
+//     project.milestones.completedMilestones = completedMilestones;
+
+//     // Check if project is completed
+//     if (completedMilestones >= project.milestones.total) {
+//       project.status = 'completed';
+//       project.timeline.endDate = new Date();
+//     }
+
+//     await project.save();
+
+//     // Update freelancer reputation
+//     await User.findOneAndUpdate(
+//       { address: milestone.freelancer },
+//       {
+//         $inc: {
+//           'reputation.totalEarned': milestone.details.amount,
+//           'reputation.completedProjects': completedMilestones >= project.milestones.total ? 1 : 0
+//         }
+//       }
+//     );
+
+//     res.json({
+//       success: true,
+//       data: {
+//         milestone,
+//         project: {
+//           id: project._id,
+//           status: project.status,
+//           completedMilestones,
+//           totalMilestones: project.milestones.total
+//         },
+//         contractCall: {
+//           contract: 'FreelancePlatform',
+//           method: 'releaseMilestonePayment',
+//           params: [milestone.onChainId || milestone.milestoneId],
+//           address: CONTRACTS.freelancePlatform.address
+//         }
+//       },
+//       message: 'Payment released successfully'
+//     });
+//   } catch (error) {
+//     handleError(error, res, 'Payment release failed');
+//   }
+// });
+
+//-------------working on chain-------
 router.post('/milestones/:id/release', validateWallet, syncUser, async (req, res) => {
   try {
-    const milestoneId = req.params.id;
+    const milestoneId = parseInt(req.params.id, 10);
 
-    // Find milestone
-    const milestone = await Milestone.findOne({
-      $or: [
-        { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
-        { onChainId: parseInt(milestoneId) },
-        { milestoneId: parseInt(milestoneId) }
-      ]
-    });
-
-    if (!milestone) {
-      return res.status(404).json({
-        success: false,
-        error: 'Milestone not found'
-      });
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
     }
 
-    // Get project to verify client
-    const project = await Project.findOne({
-      $or: [
-        { onChainId: milestone.projectId },
-        { projectId: milestone.projectId }
-      ]
-    });
+    // --- Blockchain Interaction ---
+    const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    if (!project || project.client.address !== req.userAddress) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only project client can release payments'
-      });
-    }
+    console.log(`Releasing payment for milestone ${milestoneId} on-chain`);
 
-    if (milestone.status !== 'approved') {
-      return res.status(400).json({
-        success: false,
-        error: 'Milestone must be approved before payment release'
-      });
-    }
+    const tx = await contractWithSigner.releaseMilestonePayment(milestoneId);
+    console.log('Tx sent:', tx.hash);
 
-    // Update milestone
-    milestone.status = 'paid';
-    milestone.timeline.paidAt = new Date();
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
 
-    await milestone.save();
+    // Parse event
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'PaymentReleased');
 
-    // Update project milestone completion
-    const completedMilestones = await Milestone.countDocuments({
-      projectId: milestone.projectId,
-      status: 'paid'
-    });
-
-    project.milestones.completed = completedMilestones;
-    project.milestones.completedMilestones = completedMilestones;
-
-    // Check if project is completed
-    if (completedMilestones >= project.milestones.total) {
-      project.status = 'completed';
-      project.timeline.endDate = new Date();
-    }
-
-    await project.save();
-
-    // Update freelancer reputation
-    await User.findOneAndUpdate(
-      { address: milestone.freelancer },
-      {
-        $inc: {
-          'reputation.totalEarned': milestone.details.amount,
-          'reputation.completedProjects': completedMilestones >= project.milestones.total ? 1 : 0
-        }
-      }
-    );
+    if (!event) throw new Error('MilestonePaymentReleased event not found in receipt');
 
     res.json({
       success: true,
       data: {
-        milestone,
-        project: {
-          id: project._id,
-          status: project.status,
-          completedMilestones,
-          totalMilestones: project.milestones.total
-        },
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'releaseMilestonePayment',
-          params: [milestone.onChainId || milestone.milestoneId],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash: tx.hash,
+        milestoneId: milestoneId,
+        projectId: event.args[1]?.toString(),
+        amount: event.args[2]?.toString(),
+        freelancer: event.args[3]
       },
-      message: 'Payment released successfully'
+      message: 'Milestone payment released on-chain successfully'
     });
+
   } catch (error) {
-    handleError(error, res, 'Payment release failed');
+    console.error('Payment release failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Payment release failed',
+      details: error.message
+    });
   }
 });
 
