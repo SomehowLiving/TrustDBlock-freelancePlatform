@@ -1198,123 +1198,6 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
 });
 
 // Submit milestone work
-// router.post('/milestones/:id/submit', validateWallet, syncUser, async (req, res) => {
-//   try {
-//     const milestoneId = req.params.id;
-//     const { deliveryHash, notes = '', files = [] } = req.body;
-
-//     // Add defensive check for userAddress
-//     if (!req.userAddress) {
-//       return res.status(401).json({ success: false, error: 'User address not found' });
-//     }
-
-//     // Find milestone
-//     const milestone = await Milestone.findOne({
-//       $or: [
-//         { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
-//         { onChainId: parseInt(milestoneId) },
-//         { milestoneId: parseInt(milestoneId) }
-//       ]
-//     });
-
-//     // if (!milestone) {
-//     //   return res.status(404).json({
-//     //     success: false,
-//     //     error: 'Milestone not found'
-//     //   });
-//     // }
-
-//     // if (milestone.freelancer.toLowerCase() !== req.userAddress.toLowerCase()) {
-//     //   return res.status(403).json({
-//     //     success: false,
-//     //     error: 'Only assigned freelancer can submit milestone work'
-//     //   });
-//     // }
-
-//     // if (milestone.status !== 'pending') {
-//     //   return res.status(400).json({
-//     //     success: false,
-//     //     error: 'Milestone is not in pending status'
-//     //   });
-//     // }
-
-//     // Generate proper delivery hash if not provided
-//     const deliveryData = {
-//       milestoneId: milestone.onChainId || milestone.milestoneId,
-//       notes: notes || '',
-//       files: files.map(f => ({ name: f.name, hash: f.hash })),
-//       freelancer: req.userAddress,
-//       timestamp: Date.now()
-//     };
-    
-//     const finalDeliveryHash = deliveryHash || generateProposalHash(deliveryData);
-
-//     // --- Blockchain Interaction ---
-//     const signer = new ethers.Wallet(process.env.FREELANCER_PRIVATE_KEY, provider);
-//     const contractWithSigner = freelancePlatformContract.connect(signer);
-
-//     const onChainMilestoneId = milestone.onChainId || milestone.milestoneId;
-
-//     console.log(`Submitting milestone ${onChainMilestoneId} on-chain with hash ${finalDeliveryHash}`);
-
-//     const tx = await contractWithSigner.submitMilestoneWork(
-//       onChainMilestoneId,
-//       finalDeliveryHash,
-//       notes || ''
-//     );
-
-//     console.log('Tx sent:', tx.hash);
-
-//     const receipt = await tx.wait();
-//     console.log('Tx confirmed:', receipt.transactionHash);
-
-//     // Parse event to confirm submission
-//     const event = receipt.logs
-//       .map(log => {
-//         try { return freelancePlatformContract.interface.parseLog(log); } 
-//         catch { return null; }
-//       })
-//       .find(parsed => parsed && parsed.name === 'MilestoneSubmitted');
-
-//     if (!event) throw new Error('MilestoneSubmitted event not found in receipt');
-
-//     // Update MongoDB
-//     milestone.status = 'submitted';
-//     milestone.submission = {
-//       deliveryHash: finalDeliveryHash,
-//       notes: notes || '',
-//       submittedAt: new Date(),
-//       attachments: files.map(file => ({
-//         name: file.name,
-//         url: file.url,
-//         type: file.type,
-//         size: file.size
-//       }))
-//     };
-//     milestone.timeline.submittedAt = new Date();
-//     milestone.blockchain = {
-//       status: 'confirmed',
-//       txHash: tx.hash
-//     };
-
-//     await milestone.save();
-
-//     res.json({
-//       success: true,
-//       data: { 
-//         milestone, 
-//         txHash: tx.hash,
-//         eventArgs: event.args
-//       },
-//       message: 'Milestone work submitted on-chain successfully'
-//     });
-
-//   } catch (error) {
-//     console.error('Milestone submission failed:', error);
-//     handleError(error, res, 'Milestone submission failed');
-//   }
-// });
-
 router.post('/milestones/:id/submit', validateWallet, async (req, res) => {
   try {
     const milestoneId = req.params.id;  // Use directly as on-chain ID for now
@@ -1366,7 +1249,11 @@ router.post('/milestones/:id/submit', validateWallet, async (req, res) => {
       success: true,
       data: {
         txHash: tx.hash,
-        eventArgs: event.args
+         eventArgs: event.args ? {
+          milestoneId: event.args[0]?.toString(),
+          projectId: event.args[1]?.toString(), 
+          amount: event.args[2]?.toString()
+        } : null
       },
       message: 'Milestone work submitted on-chain successfully'
     });
@@ -1381,81 +1268,131 @@ router.post('/milestones/:id/submit', validateWallet, async (req, res) => {
   }
 });
 
-
 // Approve milestone
+// router.post('/milestones/:id/approve', validateWallet, syncUser, async (req, res) => {
+//   try {
+//     const milestoneId = req.params.id;
+//     const { rating, feedback } = req.body;
+
+//     // Find milestone
+//     const milestone = await Milestone.findOne({
+//       $or: [
+//         { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
+//         { onChainId: parseInt(milestoneId) },
+//         { milestoneId: parseInt(milestoneId) }
+//       ]
+//     });
+
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+
+//     // Get project to verify client
+//     const project = await Project.findOne({
+//       $or: [
+//         { onChainId: milestone.projectId },
+//         { projectId: milestone.projectId }
+//       ]
+//     });
+
+//     if (!project || project.client.address !== req.userAddress) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project client can approve milestones'
+//       });
+//     }
+
+//     if (milestone.status !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Milestone is not in submitted status'
+//       });
+//     }
+
+//     // Update milestone
+//     milestone.status = 'approved';
+//     milestone.approval = {
+//       approvedBy: req.userAddress,
+//       approvedAt: new Date(),
+//       feedback: feedback || '',
+//       rating: rating || 5
+//     };
+//     milestone.timeline.approvedAt = new Date();
+
+//     await milestone.save();
+
+//     res.json({
+//       success: true,
+//       data: {
+//         milestone,
+//         contractCall: {
+//           contract: 'FreelancePlatform',
+//           method: 'approveMilestone',
+//           params: [milestone.onChainId || milestone.milestoneId],
+//           address: CONTRACTS.freelancePlatform.address
+//         }
+//       },
+//       message: 'Milestone approved successfully'
+//     });
+//   } catch (error) {
+//     handleError(error, res, 'Milestone approval failed');
+//   }
+// });
+
+//---------working on chain
 router.post('/milestones/:id/approve', validateWallet, syncUser, async (req, res) => {
   try {
-    const milestoneId = req.params.id;
-    const { rating, feedback } = req.body;
+    const milestoneId = parseInt(req.params.id, 10);
 
-    // Find milestone
-    const milestone = await Milestone.findOne({
-      $or: [
-        { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
-        { onChainId: parseInt(milestoneId) },
-        { milestoneId: parseInt(milestoneId) }
-      ]
-    });
-
-    if (!milestone) {
-      return res.status(404).json({
-        success: false,
-        error: 'Milestone not found'
-      });
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
     }
 
-    // Get project to verify client
-    const project = await Project.findOne({
-      $or: [
-        { onChainId: milestone.projectId },
-        { projectId: milestone.projectId }
-      ]
-    });
+    // --- Blockchain Interaction ---
+    const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    if (!project || project.client.address !== req.userAddress) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only project client can approve milestones'
-      });
-    }
+    console.log(`Approving milestone ${milestoneId} on-chain`);
 
-    if (milestone.status !== 'submitted') {
-      return res.status(400).json({
-        success: false,
-        error: 'Milestone is not in submitted status'
-      });
-    }
+    const tx = await contractWithSigner.approveMilestone(milestoneId);
+    console.log('Tx sent:', tx.hash);
 
-    // Update milestone
-    milestone.status = 'approved';
-    milestone.approval = {
-      approvedBy: req.userAddress,
-      approvedAt: new Date(),
-      feedback: feedback || '',
-      rating: rating || 5
-    };
-    milestone.timeline.approvedAt = new Date();
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
 
-    await milestone.save();
+    // Parse event
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'MilestoneApproved');
+
+    if (!event) throw new Error('MilestoneApproved event not found in receipt');
 
     res.json({
       success: true,
       data: {
-        milestone,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'approveMilestone',
-          params: [milestone.onChainId || milestone.milestoneId],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash: tx.hash,
+        milestoneId: milestoneId,
+        projectId: event.args[1]?.toString(),
+        approver: event.args[2]
       },
-      message: 'Milestone approved successfully'
+      message: 'Milestone approved on-chain successfully'
     });
+
   } catch (error) {
-    handleError(error, res, 'Milestone approval failed');
+    console.error('Milestone approval failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Milestone approval failed',
+      details: error.message
+    });
   }
 });
-
 //------------auto approve-------------------
 router.post('/milestones/:id/auto-approve', validateWallet, syncUser, async (req, res) => {
   try {
