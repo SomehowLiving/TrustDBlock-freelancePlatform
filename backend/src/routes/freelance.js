@@ -1198,85 +1198,189 @@ router.post('/projects/:id/milestones', validateWallet, syncUser, async (req, re
 });
 
 // Submit milestone work
-router.post('/milestones/:id/submit', validateWallet, syncUser, async (req, res) => {
+// router.post('/milestones/:id/submit', validateWallet, syncUser, async (req, res) => {
+//   try {
+//     const milestoneId = req.params.id;
+//     const { deliveryHash, notes = '', files = [] } = req.body;
+
+//     // Add defensive check for userAddress
+//     if (!req.userAddress) {
+//       return res.status(401).json({ success: false, error: 'User address not found' });
+//     }
+
+//     // Find milestone
+//     const milestone = await Milestone.findOne({
+//       $or: [
+//         { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
+//         { onChainId: parseInt(milestoneId) },
+//         { milestoneId: parseInt(milestoneId) }
+//       ]
+//     });
+
+//     // if (!milestone) {
+//     //   return res.status(404).json({
+//     //     success: false,
+//     //     error: 'Milestone not found'
+//     //   });
+//     // }
+
+//     // if (milestone.freelancer.toLowerCase() !== req.userAddress.toLowerCase()) {
+//     //   return res.status(403).json({
+//     //     success: false,
+//     //     error: 'Only assigned freelancer can submit milestone work'
+//     //   });
+//     // }
+
+//     // if (milestone.status !== 'pending') {
+//     //   return res.status(400).json({
+//     //     success: false,
+//     //     error: 'Milestone is not in pending status'
+//     //   });
+//     // }
+
+//     // Generate proper delivery hash if not provided
+//     const deliveryData = {
+//       milestoneId: milestone.onChainId || milestone.milestoneId,
+//       notes: notes || '',
+//       files: files.map(f => ({ name: f.name, hash: f.hash })),
+//       freelancer: req.userAddress,
+//       timestamp: Date.now()
+//     };
+    
+//     const finalDeliveryHash = deliveryHash || generateProposalHash(deliveryData);
+
+//     // --- Blockchain Interaction ---
+//     const signer = new ethers.Wallet(process.env.FREELANCER_PRIVATE_KEY, provider);
+//     const contractWithSigner = freelancePlatformContract.connect(signer);
+
+//     const onChainMilestoneId = milestone.onChainId || milestone.milestoneId;
+
+//     console.log(`Submitting milestone ${onChainMilestoneId} on-chain with hash ${finalDeliveryHash}`);
+
+//     const tx = await contractWithSigner.submitMilestoneWork(
+//       onChainMilestoneId,
+//       finalDeliveryHash,
+//       notes || ''
+//     );
+
+//     console.log('Tx sent:', tx.hash);
+
+//     const receipt = await tx.wait();
+//     console.log('Tx confirmed:', receipt.transactionHash);
+
+//     // Parse event to confirm submission
+//     const event = receipt.logs
+//       .map(log => {
+//         try { return freelancePlatformContract.interface.parseLog(log); } 
+//         catch { return null; }
+//       })
+//       .find(parsed => parsed && parsed.name === 'MilestoneSubmitted');
+
+//     if (!event) throw new Error('MilestoneSubmitted event not found in receipt');
+
+//     // Update MongoDB
+//     milestone.status = 'submitted';
+//     milestone.submission = {
+//       deliveryHash: finalDeliveryHash,
+//       notes: notes || '',
+//       submittedAt: new Date(),
+//       attachments: files.map(file => ({
+//         name: file.name,
+//         url: file.url,
+//         type: file.type,
+//         size: file.size
+//       }))
+//     };
+//     milestone.timeline.submittedAt = new Date();
+//     milestone.blockchain = {
+//       status: 'confirmed',
+//       txHash: tx.hash
+//     };
+
+//     await milestone.save();
+
+//     res.json({
+//       success: true,
+//       data: { 
+//         milestone, 
+//         txHash: tx.hash,
+//         eventArgs: event.args
+//       },
+//       message: 'Milestone work submitted on-chain successfully'
+//     });
+
+//   } catch (error) {
+//     console.error('Milestone submission failed:', error);
+//     handleError(error, res, 'Milestone submission failed');
+//   }
+// });
+
+router.post('/milestones/:id/submit', validateWallet, async (req, res) => {
   try {
-    const milestoneId = req.params.id;
-    const { deliveryHash, notes, files = [] } = req.body;
+    const milestoneId = req.params.id;  // Use directly as on-chain ID for now
+    const { deliveryHash, notes = '', files = [] } = req.body;
 
-    // Find milestone
-    const milestone = await Milestone.findOne({
-      $or: [
-        { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
-        { onChainId: parseInt(milestoneId) },
-        { milestoneId: parseInt(milestoneId) }
-      ]
-    });
-
-    if (!milestone) {
-      return res.status(404).json({
-        success: false,
-        error: 'Milestone not found'
-      });
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
     }
 
-    if (milestone.freelancer !== req.userAddress) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only assigned freelancer can submit milestone work'
-      });
-    }
-
-    if (milestone.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        error: 'Milestone is not in pending status'
-      });
-    }
-    // Generate proper delivery hash if not provided
+    // Build delivery data (optional, just for hash)
     const deliveryData = {
-      milestoneId: milestone.onChainId || milestone.milestoneId,
-      notes: notes || '',
+      milestoneId,
+      notes,
       files: files.map(f => ({ name: f.name, hash: f.hash })),
       freelancer: req.userAddress,
       timestamp: Date.now()
     };
-    
+
     const finalDeliveryHash = deliveryHash || generateProposalHash(deliveryData);
 
-    // Update milestone
-    milestone.status = 'submitted';
-    milestone.submission = {
-      deliveryHash: finalDeliveryHash,
-      notes: notes || '',
-      submittedAt: new Date(),
-      attachments: files.map(file => ({
-        name: file.name,
-        url: file.url,
-        type: file.type,
-        size: file.size
-      }))
-    };
-    milestone.timeline.submittedAt = new Date();
+    // --- Blockchain Interaction ---
+    const signer = new ethers.Wallet(process.env.FREELANCER_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    await milestone.save();
+    console.log(`Submitting milestone ${milestoneId} with hash ${finalDeliveryHash}`);
+
+    const tx = await contractWithSigner.submitMilestoneWork(
+      milestoneId,
+      finalDeliveryHash,
+      notes
+    );
+
+    console.log('Tx sent:', tx.hash);
+
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
+
+    // Parse event
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'MilestoneSubmitted');
+
+    if (!event) throw new Error('MilestoneSubmitted event not found in receipt');
 
     res.json({
       success: true,
       data: {
-        milestone,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'submitMilestoneWork',
-          params: [milestone.onChainId || milestone.milestoneId, finalDeliveryHash, notes || ''],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash: tx.hash,
+        eventArgs: event.args
       },
-      message: 'Milestone work submitted successfully'
+      message: 'Milestone work submitted on-chain successfully'
     });
+
   } catch (error) {
-    handleError(error, res, 'Milestone submission failed');
+    console.error('Milestone submission failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Milestone submission failed',
+      details: error.message
+    });
   }
 });
+
 
 // Approve milestone
 router.post('/milestones/:id/approve', validateWallet, syncUser, async (req, res) => {
