@@ -23,7 +23,7 @@ const config: HardhatUserConfig = {
       url: "http://127.0.0.1:8545",
       timeout: 1000000,
     },
-    // ---- Ethereum Sepolia (Google Cloud RPC) ----
+    // ---- Ethereum Sepolia (Google Cloud RPC or Alchemy) ----
     sepolia: {
       // `https://eth-sepolia.g.alchemy.com/v2/${process.env.API_KEY}`,
       url: `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
@@ -55,7 +55,7 @@ const config: HardhatUserConfig = {
         ? [`0x${process.env.AVALANCHE_PRIVATE_KEY}`]
         : [],
     },
-
+    
     // ---- Polygon ----
     polygonMumbai: {
       url: "https://rpc-mumbai.maticvigil.com",
@@ -72,7 +72,13 @@ const config: HardhatUserConfig = {
         ? [`0x${process.env.POLYGON_PRIVATE_KEY}`]
         : [],
     },
-
+    //-------------- for avalanche subnet ----------------------
+    localSubnet: {
+      url: "http://127.0.0.1:9650/ext/bc/C/rpc",
+      accounts: process.env.AVALANCHE_PRIVATE_KEY
+        ? [`0x${process.env.AVALANCHE_PRIVATE_KEY}`]
+        : [],
+    }
   },
   ignition: {},
   etherscan: {
