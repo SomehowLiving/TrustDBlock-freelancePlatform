@@ -1610,10 +1610,130 @@ router.post('/milestones/:id/release', validateWallet, syncUser, async (req, res
 });
 
 // Dispute milestone
+// router.post('/milestones/:id/dispute', validateWallet, syncUser, async (req, res) => {
+//   try {
+//     const milestoneId = req.params.id;
+//     const { reason, category, evidence = [] } = req.body;
+
+//     if (!reason || reason.trim().length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Dispute reason is required'
+//       });
+//     }
+//     // Find milestone
+//     const milestone = await Milestone.findOne({
+//       $or: [
+//         { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
+//         { onChainId: parseInt(milestoneId) },
+//         { milestoneId: parseInt(milestoneId) }
+//       ]
+//     });
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'Milestone not found'
+//       });
+//     }
+//     // Get project to verify participants
+//     const project = await Project.findOne({
+//       $or: [
+//         { onChainId: milestone.projectId },
+//         { projectId: milestone.projectId }
+//       ]
+//     });
+//     const isClient = project.client.address === req.userAddress;
+//     const isFreelancer = milestone.freelancer === req.userAddress;
+
+//     if (!isClient && !isFreelancer) {
+//       return res.status(403).json({
+//         success: false,
+//         error: 'Only project participants can raise disputes'
+//       });
+//     }
+//     if (milestone.status !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Can only dispute submitted milestones'
+//       });
+//     }
+
+//     // Create dispute record
+//     const disputeId = `${milestone.projectId}-${milestone._id}-${Date.now()}`;
+
+//     const dispute = await Dispute.create({
+//       disputeId,
+//       projectId: milestone.projectId,
+//       milestoneId: milestone.onChainId || milestone.milestoneId,
+//       parties: {
+//         client: {
+//           wallet: project.client.address,
+//           displayName: project.client.displayName
+//         },
+//         freelancer: {
+//           wallet: milestone.freelancer,
+//           displayName: project.freelancer.displayName
+//         },
+//         raisedBy: req.userAddress,
+//         againstAddress: isClient ? milestone.freelancer : project.client.address
+//       },
+//       details: {
+//         reason: reason.trim(),
+//         category: category || 'other',
+//         evidence: evidence.map(e => ({
+//           type: e.type,
+//           url: e.url,
+//           description: e.description,
+//           uploadedBy: req.userAddress,
+//           uploadedAt: new Date()
+//         }))
+//       }
+//     });
+
+//     // Update milestone
+//     milestone.status = 'disputed';
+//     milestone.dispute = {
+//       raised: true,
+//       raisedBy: req.userAddress,
+//       raisedAt: new Date(),
+//       reason: reason.trim(),
+//       disputeReason: reason.trim()
+//     };
+//     milestone.timeline.disputedAt = new Date();
+
+//     await milestone.save();
+
+//     // Update project
+//     project.flags.isDisputed = true;
+//     await project.save();
+
+//     res.json({
+//       success: true,
+//       data: {
+//         milestone,
+//         dispute,
+//         contractCall: {
+//           contract: 'FreelancePlatform',
+//           method: 'disputeMilestone',
+//           params: [milestone.onChainId || milestone.milestoneId],
+//           address: CONTRACTS.freelancePlatform.address
+//         }
+//       },
+//       message: 'Dispute raised successfully. Platform admin will review.'
+//     });
+//   } catch (error) {
+//     handleError(error, res, 'Dispute creation failed');
+//   }
+// });
+
 router.post('/milestones/:id/dispute', validateWallet, syncUser, async (req, res) => {
   try {
-    const milestoneId = req.params.id;
-    const { reason, category, evidence = [] } = req.body;
+    const milestoneId = parseInt(req.params.id, 10);
+    const { reason } = req.body;
+
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
+    }
 
     if (!reason || reason.trim().length === 0) {
       return res.status(400).json({
@@ -1621,108 +1741,50 @@ router.post('/milestones/:id/dispute', validateWallet, syncUser, async (req, res
         error: 'Dispute reason is required'
       });
     }
-    // Find milestone
-    const milestone = await Milestone.findOne({
-      $or: [
-        { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
-        { onChainId: parseInt(milestoneId) },
-        { milestoneId: parseInt(milestoneId) }
-      ]
-    });
-    if (!milestone) {
-      return res.status(404).json({
-        success: false,
-        error: 'Milestone not found'
-      });
-    }
-    // Get project to verify participants
-    const project = await Project.findOne({
-      $or: [
-        { onChainId: milestone.projectId },
-        { projectId: milestone.projectId }
-      ]
-    });
-    const isClient = project.client.address === req.userAddress;
-    const isFreelancer = milestone.freelancer === req.userAddress;
 
-    if (!isClient && !isFreelancer) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only project participants can raise disputes'
-      });
-    }
-    if (milestone.status !== 'submitted') {
-      return res.status(400).json({
-        success: false,
-        error: 'Can only dispute submitted milestones'
-      });
-    }
+    // --- Blockchain Interaction ---
+    // Note: Using CLIENT_PRIVATE_KEY for now, but in reality this should be 
+    // the private key of whoever is raising the dispute (client or freelancer)
+    const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    // Create dispute record
-    const disputeId = `${milestone.projectId}-${milestone._id}-${Date.now()}`;
+    console.log(`Raising dispute for milestone ${milestoneId} on-chain`);
 
-    const dispute = await Dispute.create({
-      disputeId,
-      projectId: milestone.projectId,
-      milestoneId: milestone.onChainId || milestone.milestoneId,
-      parties: {
-        client: {
-          wallet: project.client.address,
-          displayName: project.client.displayName
-        },
-        freelancer: {
-          wallet: milestone.freelancer,
-          displayName: project.freelancer.displayName
-        },
-        raisedBy: req.userAddress,
-        againstAddress: isClient ? milestone.freelancer : project.client.address
-      },
-      details: {
-        reason: reason.trim(),
-        category: category || 'other',
-        evidence: evidence.map(e => ({
-          type: e.type,
-          url: e.url,
-          description: e.description,
-          uploadedBy: req.userAddress,
-          uploadedAt: new Date()
-        }))
-      }
-    });
+    const tx = await contractWithSigner.disputeMilestone(milestoneId);
+    console.log('Tx sent:', tx.hash);
 
-    // Update milestone
-    milestone.status = 'disputed';
-    milestone.dispute = {
-      raised: true,
-      raisedBy: req.userAddress,
-      raisedAt: new Date(),
-      reason: reason.trim(),
-      disputeReason: reason.trim()
-    };
-    milestone.timeline.disputedAt = new Date();
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
 
-    await milestone.save();
+    // Parse event
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'DisputeRaised');
 
-    // Update project
-    project.flags.isDisputed = true;
-    await project.save();
+    if (!event) throw new Error('DisputeRaised event not found in receipt');
 
     res.json({
       success: true,
       data: {
-        milestone,
-        dispute,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'disputeMilestone',
-          params: [milestone.onChainId || milestone.milestoneId],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash: tx.hash,
+        milestoneId: milestoneId,
+        projectId: event.args[1]?.toString(),
+        disputeRaisedBy: event.args[2],
+        reason: reason.trim()
       },
-      message: 'Dispute raised successfully. Platform admin will review.'
+      message: 'Dispute raised on-chain successfully'
     });
+
   } catch (error) {
-    handleError(error, res, 'Dispute creation failed');
+    console.error('Milestone dispute failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Milestone dispute failed',
+      details: error.message
+    });
   }
 });
 //--------------------extend-----------------------
