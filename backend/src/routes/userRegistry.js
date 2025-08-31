@@ -26,11 +26,127 @@ const {
 const { CONTRACTS, provider, freelancePlatformContract, userRegistryContract } = require('./contracts.js'); // Extract contract setup
 
 // Register user (hybrid approach)
+// router.post('/users/register', validateWallet, async (req, res) => {
+//   try {
+//     const { username, email, password, role, bio, skills = [] } = req.body;
+
+//     // Basic validation: check required fields
+//     if (!username || !email || !password || !role) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Username, email, password, and role are required'
+//       });
+//     }
+
+//     // Validate role
+//     if (!['client', 'freelancer', 'admin'].includes(role.toLowerCase())) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Role must be client, freelancer, or admin'
+//       });
+//     }
+
+//     // Check if user already exists in DB by wallet, email, or username
+//     let user = await User.findOne({
+//       $or: [
+//         { address: req.userAddress },        // wallet address
+//         { email: email.toLowerCase() },      // email
+//         { username: username.toLowerCase() } // username
+//       ]
+//     });
+
+//     // Check if user is already registered on blockchain
+//     const isOnChain = await userRegistryContract.isUserRegistered(req.userAddress);
+
+//     if (user && isOnChain) {
+//       // User exists both on DB and blockchain → stop here
+//       return res.status(409).json({
+//         success: false,
+//         error: 'User already exists in DB and on blockchain'
+//       });
+//     }
+
+//     if (!user) {
+//       // User does not exist in DB → create a new DB entry
+//       user = await User.create({
+//         address: req.userAddress,
+//         username: username.toLowerCase(),
+//         email: email.toLowerCase(),
+//         password,  // ideally hashed before saving!
+//         role: role.toLowerCase(),
+//         profile: { bio: bio || '', skills, availability: 'available' },
+//         isActive: false
+//       });
+//       console.log("User created in DB:", user._id);
+//     }
+
+//     let txHash = null;
+
+//     if (!isOnChain) {
+//       // Blockchain registration is needed
+//       const metadataHash = "QmUserMetadata123" + Date.now(); // placeholder for IPFS
+//       const roleCapitalized = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+
+//       // Signer using private key
+//       const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+//       const userRegistryWithSigner = userRegistryContract.connect(signer);
+
+//       try {
+//         // Send blockchain transaction
+//         const tx = await userRegistryWithSigner.selfRegister(roleCapitalized, metadataHash, {
+//           gasLimit: 250_000  // Gas limit
+//         });
+//         console.log("Transaction sent:", tx.hash);
+
+//         // Wait for mining
+//         const receipt = await tx.wait();
+//         console.log("Transaction mined:", receipt.transactionHash);
+
+//         txHash = tx.hash;
+
+//         // Update DB with blockchain info
+//         await User.findByIdAndUpdate(user._id, {
+//           'blockchain.txHash': txHash,
+//           'blockchain.status': 'pending'
+//         });
+//       } catch (err) {
+//         // Log detailed blockchain error
+//         console.error("Blockchain registration failed:", err);
+//         console.log("Check contract method, role parameter, gas, or wallet balance.");
+//       }
+//     }
+
+//     // Return response to client
+//     res.status(201).json({
+//       success: true,
+//       data: {
+//         user: {
+//           id: user._id,
+//           address: user.address,
+//           username: user.username,
+//           email: user.email,
+//           role: user.role,
+//           profile: user.profile,
+//           blockchainTx: txHash
+//         }
+//       },
+//       message: 'User registration completed. Blockchain registration initiated if needed.'
+//     });
+
+//   } catch (error) {
+//     handleError(error, res, 'User registration failed');
+//   }
+// });
+
+//--------------prototype---------------------
+// Remove User model imports
+// const User = require("../models/User");
+
 router.post('/users/register', validateWallet, async (req, res) => {
   try {
     const { username, email, password, role, bio, skills = [] } = req.body;
 
-    // Basic validation: check required fields
+    // Basic validation
     if (!username || !email || !password || !role) {
       return res.status(400).json({
         success: false,
@@ -46,91 +162,55 @@ router.post('/users/register', validateWallet, async (req, res) => {
       });
     }
 
-    // Check if user already exists in DB by wallet, email, or username
-    let user = await User.findOne({
-      $or: [
-        { address: req.userAddress },        // wallet address
-        { email: email.toLowerCase() },      // email
-        { username: username.toLowerCase() } // username
-      ]
-    });
-
-    // Check if user is already registered on blockchain
+    // Check if already registered on-chain
     const isOnChain = await userRegistryContract.isUserRegistered(req.userAddress);
-
-    if (user && isOnChain) {
-      // User exists both on DB and blockchain → stop here
+    if (isOnChain) {
       return res.status(409).json({
         success: false,
-        error: 'User already exists in DB and on blockchain'
+        error: 'User already registered on blockchain'
       });
     }
 
-    if (!user) {
-      // User does not exist in DB → create a new DB entry
-      user = await User.create({
-        address: req.userAddress,
-        username: username.toLowerCase(),
-        email: email.toLowerCase(),
-        password,  // ideally hashed before saving!
-        role: role.toLowerCase(),
-        profile: { bio: bio || '', skills, availability: 'available' },
-        isActive: false
-      });
-      console.log("User created in DB:", user._id);
-    }
-
+    // Blockchain registration
     let txHash = null;
-
-    if (!isOnChain) {
-      // Blockchain registration is needed
-      const metadataHash = "QmUserMetadata123" + Date.now(); // placeholder for IPFS
+    try {
+      const metadataHash = "QmUserMetadata123" + Date.now(); // TODO: store in IPFS
       const roleCapitalized = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
 
-      // Signer using private key
       const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
       const userRegistryWithSigner = userRegistryContract.connect(signer);
 
-      try {
-        // Send blockchain transaction
-        const tx = await userRegistryWithSigner.selfRegister(roleCapitalized, metadataHash, {
-          gasLimit: 250_000  // Gas limit
-        });
-        console.log("Transaction sent:", tx.hash);
+      const tx = await userRegistryWithSigner.selfRegister(roleCapitalized, metadataHash, {
+        gasLimit: 250_000
+      });
+      console.log("Transaction sent:", tx.hash);
 
-        // Wait for mining
-        const receipt = await tx.wait();
-        console.log("Transaction mined:", receipt.transactionHash);
+      const receipt = await tx.wait();
+      console.log("Transaction mined:", receipt.transactionHash);
 
-        txHash = tx.hash;
-
-        // Update DB with blockchain info
-        await User.findByIdAndUpdate(user._id, {
-          'blockchain.txHash': txHash,
-          'blockchain.status': 'pending'
-        });
-      } catch (err) {
-        // Log detailed blockchain error
-        console.error("Blockchain registration failed:", err);
-        console.log("Check contract method, role parameter, gas, or wallet balance.");
-      }
+      txHash = tx.hash;
+    } catch (err) {
+      console.error("Blockchain registration failed:", err);
+      return res.status(500).json({
+        success: false,
+        error: 'Blockchain registration failed'
+      });
     }
 
-    // Return response to client
+    // Respond without DB
     res.status(201).json({
       success: true,
       data: {
         user: {
-          id: user._id,
-          address: user.address,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          profile: user.profile,
+          address: req.userAddress,
+          username: username.toLowerCase(),
+          email: email.toLowerCase(),
+          role: role.toLowerCase(),
+          profile: { bio: bio || '', skills, availability: 'available' },
           blockchainTx: txHash
         }
       },
-      message: 'User registration completed. Blockchain registration initiated if needed.'
+      message: 'User registration completed on blockchain.'
     });
 
   } catch (error) {
@@ -139,49 +219,6 @@ router.post('/users/register', validateWallet, async (req, res) => {
 });
 
 
-// Complete user registration (after blockchain confirmation)
-// router.post('/users/:address/confirm', async (req, res) => {
-//   try {
-//     const { txHash } = req.body;
-//     const userAddress = req.params.address.toLowerCase();
-
-//     // Verify blockchain registration
-//     const isRegistered = await userRegistryContract.isUserRegistered(userAddress);
-//     if (!isRegistered) {
-//       return res.status(400).json({
-//         success: false,
-//         error: 'User not registered on blockchain'
-//       });
-//     }
-
-//     // Update user in database
-//     const user = await User.findOneAndUpdate(
-//       { address: userAddress },
-//       {
-//         isActive: true,
-//         lastLogin: new Date(),
-//         'blockchain.status': 'confirmed',
-//         'blockchain.txHash': txHash
-//       },
-//       { new: true }
-//     );
-
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         error: 'User not found in database'
-//       });
-//     }
-
-//     res.json({
-//       success: true,
-//       data: user,
-//       message: 'User registration confirmed successfully'
-//     });
-//   } catch (error) {
-//     handleError(error, res, 'Registration confirmation failed');
-//   }
-// });
 
 // Get user profile (MongoDB first, blockchain sync)
 router.get('/users/:address', async (req, res) => {
@@ -600,6 +637,38 @@ router.get('/users/:address/reputation', async (req, res) => {
   } catch (error) {
     handleError(error, res, 'Error getting user reputation');
   }
+
+router.get('/users/stats', async (req, res) => {
+  try {
+    // Connect contract as a read-only provider
+    const contract = userRegistryContract; // already set with provider
+
+    // Call the view function
+    const stats = await contract.getUserStats();
+
+    // stats is an array-like object, destructure
+    const [totalUsers, totalClients, totalFreelancers, totalAdmins] = stats.map(s => s.toString());
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers,
+        totalClients,
+        totalFreelancers,
+        totalAdmins
+      },
+      message: 'User statistics fetched from blockchain successfully'
+    });
+  } catch (error) {
+    console.error('Fetching user stats failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Fetching user stats failed',
+      details: error.message
+    });
+  }
+});
+
 });
 
 module.exports = router;
