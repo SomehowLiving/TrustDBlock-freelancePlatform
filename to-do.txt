@@ -83,12 +83,12 @@ curl -X POST http://localhost:3000/api/projects/2/accept \
   -H "Content-Type: application/json" \
   -H "x-wallet-address: 0xE8498A47dEF64D6640689e2a71a0F4F4c159Ca3b"
 
- 2. Client Agrees Milestones
+7. Client Agrees Milestones
 curl -X POST http://localhost:3000/api/projects/1/milestones/agree \
   -H "Content-Type: application/json" \
   -H "x-wallet-address: 0x1b2eb00738e5200f848d9639A5B55ab512314de5" \
   -d '{
-    "amounts": ["48500000000000000", "48500000000000000"],
+    "amounts": ["48500000000000000", "47500000000000000"],
     "deadlines": ["1767225599", "1769894399"],
     "metadataHashes": [
       "QmHashDesignHomepage",
@@ -96,8 +96,7 @@ curl -X POST http://localhost:3000/api/projects/1/milestones/agree \
     ]
   }'
 
-
- 3. Freelancer Submits Milestone Work
+8. Freelancer Submits Milestone Work
 curl -X POST http://localhost:3000/api/milestones/2/submit-work \
   -H "Content-Type: application/json" \
   -H "x-wallet-address: 0xE8498A47dEF64D6640689e2a71a0F4F4c159Ca3b" \
@@ -106,12 +105,12 @@ curl -X POST http://localhost:3000/api/milestones/2/submit-work \
     "notes": "Completed homepage design as per requirements"
   }'
 
-8. Approve Milestone (Client)
+9. Approve Milestone (Client)
 curl -X POST http://localhost:3000/api/milestones/2/approve \
   -H "Content-Type: application/json" \
   -H "x-wallet-address: 0x1b2eb00738e5200f848d9639A5B55ab512314de5"
 
-9. Release Payment (anyone--) 2.5% fee transfer to deployer and rest to the freelancer: 0xE8498A47dEF64D6640689e2a71a0F4F4c159Ca3b
+10. Release Payment (anyone--) 2.5% fee transfer to deployer and rest to the freelancer: 0xE8498A47dEF64D6640689e2a71a0F4F4c159Ca3b
 curl -X POST http://localhost:3000/api/milestones/2/release \
   -H "Content-Type: application/json" \
   -H "x-wallet-address: 0x1b2eb00738e5200f848d9639A5B55ab512314de5"
@@ -121,6 +120,7 @@ curl -X POST http://localhost:3000/api/milestones/2/release \
 
 
 
+//------------------------------------------------------------------------------------------------------------------------------------
 
 
 7. Submit Milestone Work (Freelancer)
