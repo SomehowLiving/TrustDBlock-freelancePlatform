@@ -218,8 +218,6 @@ router.post('/users/register', validateWallet, async (req, res) => {
   }
 });
 
-
-
 // Get user profile (MongoDB first, blockchain sync)
 router.get('/users/:address', async (req, res) => {
   try {
@@ -305,6 +303,82 @@ router.get('/users/:address', async (req, res) => {
   }
 });
 
+
+// Get user profile----onchain
+// router.get('/users/:address', async (req, res) => {
+//   try {
+//     const userAddress = req.params.address;
+    
+//     if (!validateAddress(userAddress)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Invalid wallet address'
+//       });
+//     }
+
+//     const isRegistered = await userRegistryContract.isUserRegistered(userAddress);
+//     if (!isRegistered) {
+//       return res.status(404).json({
+//         success: false,
+//         error: 'User not registered'
+//       });
+//     }
+
+//     const profile = await userRegistryContract.getUserProfile(userAddress);
+//     const reputation = await freelancePlatformContract.getFreelancerReputation(userAddress);
+
+//     res.json({
+//       success: true,
+//       data: {
+//         address: userAddress,
+//         role: profile.role,
+//         registrationTime: profile.registrationTime.toString(),
+//         isActive: profile.isActive,
+//         metadataHash: profile.metadataHash,
+//         reputation: {
+//           totalEarned: formatEther(reputation.totalEarned),
+//           projectsCompleted: reputation.projectsCompleted.toString(),
+//           averageRating: reputation.averageRating.toString(),
+//           totalRatings: reputation.totalRatings.toString(),
+//           hasNFT: reputation.hasNFT
+//         }
+//       }
+//     });
+//   } catch (error) {
+//     handleError(error, res);
+//   }
+// });
+
+// Get users by role
+router.get('/users/role/:role', async (req, res) => {
+  try {
+    const { role } = req.params;
+    
+    if (!['Client', 'Freelancer', 'Admin'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Role must be Client, Freelancer, or Admin'
+      });
+    }
+
+    const users = await userRegistryContract.getUsersByRole(role);
+    const activeUsers = await userRegistryContract.getActiveUsersByRole(role);
+
+    res.json({
+      success: true,
+      data: {
+        role,
+        allUsers: users,
+        activeUsers,
+        totalCount: users.length,
+        activeCount: activeUsers.length
+      }
+    });
+  } catch (error) {
+    handleError(error, res);
+  }
+});
+
 // Update user profile
 router.patch('/users/:address', validateWallet, syncUser, async (req, res) => {
   try {
@@ -348,7 +422,6 @@ router.patch('/users/:address', validateWallet, syncUser, async (req, res) => {
     handleError(error, res, 'Profile update failed');
   }
 });
-
 
 // Get user dashboard data
 router.get('/users/:address/dashboard', validateWallet, syncUser, async (req, res) => {
