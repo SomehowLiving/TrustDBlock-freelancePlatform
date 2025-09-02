@@ -958,10 +958,7 @@ router.post('/milestones/:id/dispute', validateWallet, syncUser, async (req, res
     }
 
     if (!reason || reason.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Dispute reason is required'
-      });
+      return res.status(400).json({ success: false, error: 'Dispute reason is required' });
     }
 
     const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
@@ -990,8 +987,8 @@ router.post('/milestones/:id/dispute', validateWallet, syncUser, async (req, res
       data: {
         txHash: tx.hash,
         milestoneId: milestoneId,
-        projectId: event.args[1]?.toString(),
-        disputeRaisedBy: event.args[2],
+        projectId: event.args[0]?.toString(),
+        disputeRaisedBy: event.args[1],
         reason: reason.trim()
       },
       message: 'Dispute raised on-chain successfully'
@@ -1006,7 +1003,7 @@ router.post('/milestones/:id/dispute', validateWallet, syncUser, async (req, res
     });
   }
 });
-//--------------------extend-----------------------under development
+//--------------------extend-----------------------
 // Request Extension Route
 router.post('/milestones/:id/request-extension', validateWallet, syncUser, async (req, res) => {
   try {
@@ -1030,7 +1027,7 @@ router.post('/milestones/:id/request-extension', validateWallet, syncUser, async
 
     const tx = await contractWithSigner.requestExtension(
       milestoneId,
-      newDeadline
+      newDeadlineTimestamp
     );
     console.log('Tx sent:', tx.hash);
 
@@ -1049,21 +1046,20 @@ router.post('/milestones/:id/request-extension', validateWallet, syncUser, async
     res.json({
       success: true,
       data: {
-        milestone,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'MilestoneExtensionRequested',
-          params: [
-            milestone.onChainId || milestone.milestoneId,
-            newDeadlineTimestamp
-          ],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash:tx.hash,
+        milestoneId: event.args?.[0]?.toString() ?? milestoneId.toString(),
+        projectId: event.args?.[1]?.toString(),
+        requestedNewDeadline: newDeadlineTimestamp
       },
       message: 'Extension request submitted successfully'
     });
   } catch (error) {
-    handleError(error, res, 'Extension request failed');
+    console.error('Extension request failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Extension request failed',
+      details: error.message
+    });
   }
 });
 
@@ -1072,284 +1068,339 @@ router.post('/milestones/:id/approve-extension', validateWallet, syncUser, async
   try {
     const milestoneId = req.params.id;
     const { newDeadline } = req.body;
-
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
+    }
     if (!newDeadline) {
       return res.status(400).json({
         success: false,
         error: 'New deadline is required'
       });
     }
-    // Find milestone
-    const milestone = await Milestone.findOne({
-      $or: [
-        { _id: milestoneId.match(/^[0-9a-fA-F]{24}$/) ? milestoneId : null },
-        { onChainId: parseInt(milestoneId) },
-        { milestoneId: parseInt(milestoneId) }
-      ]
-    });
+     const newDeadlineTimestamp = Math.floor(new Date(newDeadline).getTime() / 1000);
 
-    if (!milestone) {
-      return res.status(404).json({
-        success: false,
-        error: 'Milestone not found'
-      });
-    }
+    // Client signs approval
+    const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    // Get project to verify client
-    const project = await Project.findOne({
-      $or: [
-        { onChainId: milestone.projectId },
-        { projectId: milestone.projectId }
-      ]
-    });
+    console.log(`Approving extension for milestone ${milestoneId} on-chain`);
 
-    if (!project || project.client.address !== req.userAddress) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only project client can approve extensions'
-      });
-    }
+    const tx = await contractWithSigner.approveExtension(milestoneId, newDeadlineTimestamp);
+    console.log('Tx sent:', tx.hash);
 
-    const newDeadlineTimestamp = Math.floor(new Date(newDeadline).getTime() / 1000);
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
+    
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'MilestoneExtensionApproved');
 
-    // Update milestone
-    milestone.timeline.deadline = new Date(newDeadline);
-    milestone.extension.approved = true;
-    milestone.extension.approvedAt = new Date();
-    await milestone.save();
+    if (!event) throw new Error('MilestoneExtensionApproved event not found in receipt');
 
     res.json({
       success: true,
       data: {
-        milestone,
-        contractCall: {
-          contract: 'FreelancePlatform',
-          method: 'approveExtension',
-          params: [
-            milestone.onChainId || milestone.milestoneId,
-            newDeadlineTimestamp
-          ],
-          address: CONTRACTS.freelancePlatform.address
-        }
+        txHash: tx.hash,
+        milestoneId: event.args?.[0]?.toString() ?? milestoneId.toString(),
+        projectId: event.args?.[1]?.toString(),
+        newDeadline: event.args?.[2]?.toString() ?? newDeadlineTimestamp.toString()
       },
       message: 'Extension approved successfully'
     });
+
   } catch (error) {
-    handleError(error, res, 'Extension approval failed');
+    console.error('Extension approval failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Extension approval failed',
+      details: error.message
+    });
   }
 });
 
-// Advanced project search with full-text search
-router.post('/projects/search', async (req, res) => {
+
+// Admin/owner resolves dispute
+router.post('/milestones/:id/resolve-dispute', validateWallet, async (req, res) => {
   try {
-    const {
-      query,
-      filters = {},
-      sort = { createdAt: -1 },
-      page = 1,
-      limit = 20
-    } = req.body;
+    const milestoneId = parseInt(req.params.id, 10);
+    const { winner, disputedAmount } = req.body;
 
-    let pipeline = [];
-
-    // Text search stage
-    if (query) {
-      pipeline.push({
-        $match: {
-          $text: { $search: query }
-        }
-      });
+    if (!req.userAddress) {
+      return res.status(401).json({ success: false, error: 'User address not found' });
+    }
+    if (!Number.isFinite(milestoneId)) {
+      return res.status(400).json({ success: false, error: 'Invalid milestone id' });
+    }
+    if (!winner || !ethers.utils.isAddress(winner)) {
+      return res.status(400).json({ success: false, error: 'Valid winner address is required' });
+    }
+    if (!disputedAmount || !/^\d+$/.test(String(disputedAmount))) {
+      return res.status(400).json({ success: false, error: 'disputedAmount (uint) is required' });
     }
 
-    // Filters stage
-    let matchStage = { status: 'open' }; // Default to open projects
+    // Contract owner signer
+    const signer = new ethers.Wallet(process.env.ADMIN_KEY, provider);
+    const contractWithSigner = freelancePlatformContract.connect(signer);
 
-    if (filters.category) {
-      matchStage.category = filters.category;
-    }
+    console.log(`Resolving dispute for milestone ${milestoneId} on-chain`);
 
-    if (filters.budget) {
-      if (filters.budget.min || filters.budget.max) {
-        matchStage['budget.total'] = {};
-        if (filters.budget.min) matchStage['budget.total'].$gte = filters.budget.min;
-        if (filters.budget.max) matchStage['budget.total'].$lte = filters.budget.max;
-      }
-    }
+    const tx = await contractWithSigner.resolveDispute(
+      milestoneId,
+      winner,
+      ethers.BigNumber.from(disputedAmount)
+    );
+    console.log('Tx sent:', tx.hash);
 
-    if (filters.skills && filters.skills.length > 0) {
-      matchStage.skills = { $in: filters.skills };
-    }
+    const receipt = await tx.wait();
+    console.log('Tx confirmed:', receipt.transactionHash);
 
-    if (filters.timeline) {
-      if (filters.timeline.maxDays) {
-        const futureDate = new Date();
-        futureDate.setDate(futureDate.getDate() + filters.timeline.maxDays);
-        matchStage['timeline.deadline'] = { $lte: futureDate };
-      }
-    }
+    // DisputeResolved(projectId, winner, disputedAmount)
+    const event = receipt.logs
+      .map(log => {
+        try { return freelancePlatformContract.interface.parseLog(log); }
+        catch { return null; }
+      })
+      .find(parsed => parsed && parsed.name === 'DisputeResolved');
 
-    pipeline.push({ $match: matchStage });
-
-    // Add client information
-    pipeline.push({
-      $lookup: {
-        from: 'users',
-        localField: 'client.address',
-        foreignField: 'address',
-        as: 'clientInfo'
-      }
-    });
-
-    // Add application count
-    pipeline.push({
-      $lookup: {
-        from: 'applications',
-        let: { projectId: '$onChainId' },
-        pipeline: [
-          { $match: { $expr: { $eq: ['$projectId', '$projectId'] } } },
-          { $count: 'count' }
-        ],
-        as: 'applicationCount'
-      }
-    });
-
-    // Sort stage
-    pipeline.push({ $sort: sort });
-
-    // Add text score for relevance (if text search was used)
-    if (query) {
-      pipeline.push({
-        $addFields: {
-          score: { $meta: 'textScore' }
-        }
-      });
-    }
-
-    // Pagination
-    pipeline.push({ $skip: (page - 1) * limit });
-    pipeline.push({ $limit: limit });
-
-    const projects = await Project.aggregate(pipeline);
-
-    // Get total count for pagination
-    const totalPipeline = pipeline.slice(0, -2); // Remove skip and limit
-    totalPipeline.push({ $count: 'total' });
-    const totalResult = await Project.aggregate(totalPipeline);
-    const total = totalResult[0]?.total || 0;
+    if (!event) throw new Error('DisputeResolved event not found in receipt');
 
     res.json({
       success: true,
-      data: projects,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
-        itemsPerPage: limit
+      data: {
+        txHash: tx.hash,
+        projectId: event.args?.[0]?.toString(),
+        winner: event.args?.[1],
+        disputedAmount: event.args?.[2]?.toString()
       },
-      searchInfo: {
-        query,
-        filters,
-        resultsFound: total
-      }
+      message: 'Dispute resolved on-chain successfully'
     });
+
   } catch (error) {
-    handleError(error, res, 'Project search failed');
-  }
-});
-
-// Get fee information from contract (read-only)
-router.get('/platform/fees', async (req, res) => {
-  try {
-    // Read fee percentages from contract
-    const platformFeePercent = await freelancePlatformContract.platformFeePercent();
-    const freelancerFeePercent = await freelancePlatformContract.freelancerFeePercent();
-
-    // Convert basis points to percentage
-    const platformFeePercentage = parseInt(platformFeePercent.toString()) / 10000; // 300 → 3%
-    const freelancerFeePercentage = parseInt(freelancerFeePercent.toString()) / 10000; // 250 → 2.5%
-
-    res.json({
-      success: true,
-      data: {
-        platformFee: {
-          basisPoints: platformFeePercent.toString(),
-          percentage: platformFeePercentage
-        },
-        freelancerFee: {
-          basisPoints: freelancerFeePercent.toString(),
-          percentage: freelancerFeePercentage
-        },
-        note: "Fees are automatically deducted by the smart contract"
-      }
+    console.error('Resolve dispute failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Resolve dispute failed',
+      details: error.message
     });
-  } catch (error) {
-    // Fallback to default values if contract call fails
-    res.json({
-      success: true,
-      data: {
-        platformFee: { basisPoints: "300", percentage: 3 },
-        freelancerFee: { basisPoints: "250", percentage: 2.5 },
-        note: "Default fee values - contract call failed"
-      }
-    });
-  }
-});
-
-// Frontend helper to calculate fees for UI display ONLY
-router.post('/calculate-fees', async (req, res) => {
-  try {
-    const { amount } = req.body;
-
-    if (!amount || !validateAmount(amount)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Valid amount required'
-      });
-    }
-
-    try {
-      // Get current fees from contract
-      const platformFeePercent = await freelancePlatformContract.platformFeePercent();
-      const freelancerFeePercent = await freelancePlatformContract.freelancerFeePercent();
-
-      const platformFeePercentage = parseInt(platformFeePercent.toString()) / 10000; // Basis points to decimal
-      const freelancerFeePercentage = parseInt(freelancerFeePercent.toString()) / 10000;
-
-      const amountFloat = parseFloat(amount);
-      const platformFee = amountFloat * platformFeePercentage;
-      const freelancerFee = amountFloat * freelancerFeePercentage;
-      const netAmount = amountFloat - platformFee;
-
-      res.json({
-        success: true,
-        data: {
-          inputAmount: amountFloat,
-          platformFee: platformFee,
-          freelancerFee: freelancerFee, // Applied later on milestone payments
-          netEscrowAmount: netAmount,
-          note: "This is for UI display only. Actual fees are calculated by smart contract."
-        }
-      });
-    } catch (contractError) {
-      // Fallback calculation with default values
-      const platformFee = parseFloat(amount) * 0.03; // 3%
-      const freelancerFee = parseFloat(amount) * 0.025; // 2.5%
-      const netAmount = parseFloat(amount) - platformFee;
-
-      res.json({
-        success: true,
-        data: {
-          inputAmount: parseFloat(amount),
-          platformFee: platformFee,
-          freelancerFee: freelancerFee,
-          netEscrowAmount: netAmount,
-          note: "Estimated fees - using default values"
-        }
-      });
-    }
-  } catch (error) {
-    handleError(error, res, 'Fee calculation failed');
   }
 });
 
 module.exports = router;
+
+// // Advanced project search with full-text search--after mongodb integration
+// router.post('/projects/search', async (req, res) => {
+//   try {
+//     const {
+//       query,
+//       filters = {},
+//       sort = { createdAt: -1 },
+//       page = 1,
+//       limit = 20
+//     } = req.body;
+
+//     let pipeline = [];
+
+//     // Text search stage
+//     if (query) {
+//       pipeline.push({
+//         $match: {
+//           $text: { $search: query }
+//         }
+//       });
+//     }
+
+//     // Filters stage
+//     let matchStage = { status: 'open' }; // Default to open projects
+
+//     if (filters.category) {
+//       matchStage.category = filters.category;
+//     }
+
+//     if (filters.budget) {
+//       if (filters.budget.min || filters.budget.max) {
+//         matchStage['budget.total'] = {};
+//         if (filters.budget.min) matchStage['budget.total'].$gte = filters.budget.min;
+//         if (filters.budget.max) matchStage['budget.total'].$lte = filters.budget.max;
+//       }
+//     }
+
+//     if (filters.skills && filters.skills.length > 0) {
+//       matchStage.skills = { $in: filters.skills };
+//     }
+
+//     if (filters.timeline) {
+//       if (filters.timeline.maxDays) {
+//         const futureDate = new Date();
+//         futureDate.setDate(futureDate.getDate() + filters.timeline.maxDays);
+//         matchStage['timeline.deadline'] = { $lte: futureDate };
+//       }
+//     }
+
+//     pipeline.push({ $match: matchStage });
+
+//     // Add client information
+//     pipeline.push({
+//       $lookup: {
+//         from: 'users',
+//         localField: 'client.address',
+//         foreignField: 'address',
+//         as: 'clientInfo'
+//       }
+//     });
+
+//     // Add application count
+//     pipeline.push({
+//       $lookup: {
+//         from: 'applications',
+//         let: { projectId: '$onChainId' },
+//         pipeline: [
+//           { $match: { $expr: { $eq: ['$projectId', '$projectId'] } } },
+//           { $count: 'count' }
+//         ],
+//         as: 'applicationCount'
+//       }
+//     });
+
+//     // Sort stage
+//     pipeline.push({ $sort: sort });
+
+//     // Add text score for relevance (if text search was used)
+//     if (query) {
+//       pipeline.push({
+//         $addFields: {
+//           score: { $meta: 'textScore' }
+//         }
+//       });
+//     }
+
+//     // Pagination
+//     pipeline.push({ $skip: (page - 1) * limit });
+//     pipeline.push({ $limit: limit });
+
+//     const projects = await Project.aggregate(pipeline);
+
+//     // Get total count for pagination
+//     const totalPipeline = pipeline.slice(0, -2); // Remove skip and limit
+//     totalPipeline.push({ $count: 'total' });
+//     const totalResult = await Project.aggregate(totalPipeline);
+//     const total = totalResult[0]?.total || 0;
+
+//     res.json({
+//       success: true,
+//       data: projects,
+//       pagination: {
+//         currentPage: page,
+//         totalPages: Math.ceil(total / limit),
+//         totalItems: total,
+//         itemsPerPage: limit
+//       },
+//       searchInfo: {
+//         query,
+//         filters,
+//         resultsFound: total
+//       }
+//     });
+//   } catch (error) {
+//     handleError(error, res, 'Project search failed');
+//   }
+// });
+
+// // Get fee information from contract (read-only)
+// router.get('/platform/fees', async (req, res) => {
+//   try {
+//     // Read fee percentages from contract
+//     const platformFeePercent = await freelancePlatformContract.platformFeePercent();
+//     const freelancerFeePercent = await freelancePlatformContract.freelancerFeePercent();
+
+//     // Convert basis points to percentage
+//     const platformFeePercentage = parseInt(platformFeePercent.toString()) / 10000; // 300 → 3%
+//     const freelancerFeePercentage = parseInt(freelancerFeePercent.toString()) / 10000; // 250 → 2.5%
+
+//     res.json({
+//       success: true,
+//       data: {
+//         platformFee: {
+//           basisPoints: platformFeePercent.toString(),
+//           percentage: platformFeePercentage
+//         },
+//         freelancerFee: {
+//           basisPoints: freelancerFeePercent.toString(),
+//           percentage: freelancerFeePercentage
+//         },
+//         note: "Fees are automatically deducted by the smart contract"
+//       }
+//     });
+//   } catch (error) {
+//     // Fallback to default values if contract call fails
+//     res.json({
+//       success: true,
+//       data: {
+//         platformFee: { basisPoints: "300", percentage: 3 },
+//         freelancerFee: { basisPoints: "250", percentage: 2.5 },
+//         note: "Default fee values - contract call failed"
+//       }
+//     });
+//   }
+// });
+
+// // Frontend helper to calculate fees for UI display ONLY
+// router.post('/calculate-fees', async (req, res) => {
+//   try {
+//     const { amount } = req.body;
+
+//     if (!amount || !validateAmount(amount)) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Valid amount required'
+//       });
+//     }
+
+//     try {
+//       // Get current fees from contract
+//       const platformFeePercent = await freelancePlatformContract.platformFeePercent();
+//       const freelancerFeePercent = await freelancePlatformContract.freelancerFeePercent();
+
+//       const platformFeePercentage = parseInt(platformFeePercent.toString()) / 10000; // Basis points to decimal
+//       const freelancerFeePercentage = parseInt(freelancerFeePercent.toString()) / 10000;
+
+//       const amountFloat = parseFloat(amount);
+//       const platformFee = amountFloat * platformFeePercentage;
+//       const freelancerFee = amountFloat * freelancerFeePercentage;
+//       const netAmount = amountFloat - platformFee;
+
+//       res.json({
+//         success: true,
+//         data: {
+//           inputAmount: amountFloat,
+//           platformFee: platformFee,
+//           freelancerFee: freelancerFee, // Applied later on milestone payments
+//           netEscrowAmount: netAmount,
+//           note: "This is for UI display only. Actual fees are calculated by smart contract."
+//         }
+//       });
+//     } catch (contractError) {
+//       // Fallback calculation with default values
+//       const platformFee = parseFloat(amount) * 0.03; // 3%
+//       const freelancerFee = parseFloat(amount) * 0.025; // 2.5%
+//       const netAmount = parseFloat(amount) - platformFee;
+
+//       res.json({
+//         success: true,
+//         data: {
+//           inputAmount: parseFloat(amount),
+//           platformFee: platformFee,
+//           freelancerFee: freelancerFee,
+//           netEscrowAmount: netAmount,
+//           note: "Estimated fees - using default values"
+//         }
+//       });
+//     }
+//   } catch (error) {
+//     handleError(error, res, 'Fee calculation failed');
+//   }
+// });
+
+
