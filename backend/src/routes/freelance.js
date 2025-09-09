@@ -28,19 +28,6 @@ const { CONTRACTS, provider, freelancePlatformContract, userRegistryContract } =
 
 router.post('/projects', validateWallet, async (req, res) => {
   try {
-    // 1. Basic role checks
-    // Instead of syncUser (MongoDB), rely on blockchain role lookup
-    // const isRegistered = await userRegistryContract.isUserRegistered(req.userAddress);
-    // if (!isRegistered) {
-    //   return res.status(400).json({ success: false, error: 'User must be registered first' });
-    // }
-
-    // Fetch role directly from contract
-    // const role = await userRegistryContract.getUserRole(req.userAddress);
-    // if (role.toLowerCase() !== 'client') {
-    //   return res.status(403).json({ success: false, error: 'Only clients can create projects on-chain' });
-    // }
-
     const {
       title,
       description,
@@ -115,7 +102,6 @@ router.post('/projects', validateWallet, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Blockchain transaction failed' });
     }
 
-    // 5. Final response (no DB persistence)
     res.status(201).json({
       success: true,
       data: {
@@ -304,44 +290,6 @@ router.post('/projects/:id/deposit', validateWallet, async (req, res) => {
   try {
     const { amount } = req.body;
     const onChainProjectId = parseInt(req.params.id, 10);
-
-    // if (!amount || !validateAmount(amount)) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     error: 'Valid deposit amount is required'
-    //   });
-    // }
-
-    // // Step 1: Check if project exists on-chain
-    // const projectExists = await freelancePlatformContract.projectExists(onChainProjectId);
-    // if (!projectExists) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     error: 'Project not found on blockchain'
-    //   });
-    // }
-
-    // Step 2: Fetch project details directly from blockchain
-    // const projectDetails = await freelancePlatformContract.getProject(onChainProjectId);
-
-    // Step 3: Authorization — only project client can deposit
-    // if (projectDetails.client.toLowerCase() !== req.userAddress.toLowerCase()) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     error: 'Only project client can deposit funds'
-    //   });
-    // }
-
-    // Step 4: Ensure deposit >= required budget
-    // const requiredBudget = parseFloat(ethers.formatEther(projectDetails.budget));
-    // if (parseFloat(amount) < requiredBudget) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     error: `Deposit amount must be at least ${requiredBudget} ETH`
-    //   });
-    // }
-
-    // Step 5: Blockchain transaction
     const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
     const freelancePlatformWithSigner = freelancePlatformContract.connect(signer);
 
@@ -422,25 +370,6 @@ router.post('/projects/:id/apply', validateWallet, async (req, res) => {
       });
     }
 
-    // // Step 1: Ensure project exists on-chain
-    // const projectExists = await freelancePlatformContract.projectExists(onChainProjectId);
-    // if (!projectExists) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     error: 'Project not found on blockchain'
-    //   });
-    // }
-
-    // // Step 2: Prevent client applying to their own project
-    // const projectDetails = await freelancePlatformContract.getProject(onChainProjectId);
-    // if (projectDetails.client.toLowerCase() === req.userAddress.toLowerCase()) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     error: 'Cannot apply to your own project'
-    //   });
-    // }
-
-    // // Step 3: Prepare proposal hash
     const proposalData = {
       coverLetter,
       proposedBudget: proposedBudget || projectDetails.budget,
@@ -514,23 +443,6 @@ router.post('/projects/:id/shortlist-freelancers', validateWallet, async (req, r
       }
     }
 
-    // Step 2: Ensure project exists on-chain
-    // const projectExists = await freelancePlatformContract.projectExists(onChainProjectId);
-    // if (!projectExists) {
-    //   return res.status(404).json({ success: false, error: 'Project not found on blockchain' });
-    // }
-
-    // Step 3: Authorization — only client can shortlist
-    // const projectDetails = await freelancePlatformContract.getProject(onChainProjectId);
-    // if (projectDetails.client.toLowerCase() !== req.userAddress.toLowerCase()) {
-    //   return res.status(403).json({ success: false, error: 'Only project client can shortlist freelancers' });
-    // }
-
-    // (Optional) Step 4: Verify freelancers applied by checking proposals on-chain (if contract supports)
-    // Example:
-    // const applied = await freelancePlatformContract.hasApplied(onChainProjectId, freelancerAddr);
-
-    // Step 5: Blockchain call
     const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
     const contractWithSigner = freelancePlatformContract.connect(signer);
 
@@ -569,38 +481,6 @@ router.post('/projects/:id/select-freelancer', validateWallet, async (req, res) 
     if (!freelancerAddress || !validateAddress(freelancerAddress)) {
       return res.status(400).json({ success: false, error: 'Valid freelancer address is required' });
     }
-
-    // Step 2: Ensure project exists on-chain
-    // const projectExists = await freelancePlatformContract.projectExists(onChainProjectId);
-    // if (!projectExists) {
-    //   return res.status(404).json({ success: false, error: 'Project not found on blockchain' });
-    // }
-
-    // // Step 3: Fetch project details
-    // const projectDetails = await freelancePlatformContract.getProject(onChainProjectId);
-
-    // // Step 4: Authorization — only the client can select a freelancer
-    // if (projectDetails.client.toLowerCase() !== req.userAddress.toLowerCase()) {
-    //   return res.status(403).json({ success: false, error: 'Only project client can select a freelancer' });
-    // }
-
-    // Step 5: Ensure project has escrow balance (optional, depending on contract rules)
-    // const escrowBalance = parseFloat(ethers.formatEther(projectDetails.escrowBalance));
-    // if (escrowBalance <= 0) {
-    //   return res.status(400).json({ success: false, error: 'Project not funded' });
-    // }
-
-    // Step 6: Ensure no freelancer already selected
-    // if (projectDetails.freelancer && projectDetails.freelancer !== ethers.ZeroAddress) {
-    //   return res.status(409).json({ success: false, error: 'Freelancer already selected' });
-    // }
-
-    // (Optional) Step 7: Check if freelancer applied/was shortlisted
-    // If your contract has a method like hasApplied/wasShortlisted, call it here
-    // const isShortlisted = await freelancePlatformContract.isShortlisted(onChainProjectId, freelancerAddress);
-    // if (!isShortlisted) return res.status(400).json({ success: false, error: 'Freelancer was not shortlisted' });
-
-    // Step 8: Blockchain transaction
     const signer = new ethers.Wallet(process.env.CLIENT_PRIVATE_KEY, provider);
     const contractWithSigner = freelancePlatformContract.connect(signer);
 
