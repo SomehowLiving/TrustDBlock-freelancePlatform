@@ -5,7 +5,7 @@ require('dotenv').config();
 
 class PlatformMonitor {
   constructor() {
-    this.baseUrl = `http://localhost:${process.env.PORT || 3001}`;
+    this.baseUrl = `http://localhost:${process.env.PORT || 3000}`;
     this.checks = [
       { name: 'Health Check', endpoint: '/health', critical: true },
       { name: 'API Docs', endpoint: '/api/docs', critical: false },

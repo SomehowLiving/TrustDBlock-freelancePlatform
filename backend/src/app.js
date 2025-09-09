@@ -69,6 +69,7 @@ class HybridFreelancePlatform {
     const allowedOrigins = process.env.ALLOWED_ORIGINS
       ? process.env.ALLOWED_ORIGINS.split(',')
       : [
+          'http://localhost:5173',  
           'http://localhost:3000',
           'http://127.0.0.1:3000',
           'http://localhost:8080',
@@ -491,7 +492,7 @@ class HybridFreelancePlatform {
   }
 
   // Start the server
-  async start(port = process.env.PORT || 3001) {
+  async start(port = process.env.PORT || 3000) {
     try {
       this.server = this.app.listen(port, () => {
         console.log(`\n🎉 Hybrid Freelance Platform started successfully!`);
