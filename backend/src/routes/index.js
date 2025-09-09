@@ -7,12 +7,14 @@ const userRegistryRoutes = require('./userRegistry');
 const freelanceRoutes = require('./freelance');
 const analyticsRoutes = require('./analytics');
 const adminRoutes = require('./admin');
+const authRoutes = require('./auth');
 
 // Use the routes
 router.use( userRegistryRoutes);
 router.use( freelanceRoutes);
 router.use( analyticsRoutes);
 router.use( adminRoutes);
+router.use( authRoutes);
 
 module.exports = router;
 

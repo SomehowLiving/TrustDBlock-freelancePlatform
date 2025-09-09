@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export async function apiRequest(method: string, url: string, data?: any) {
+export async function apiRequest(method: string, url: string, data?: any, headers: any = {}) {
   const token = localStorage.getItem('auth-storage');
   let authToken = '';
   
@@ -22,7 +22,8 @@ export async function apiRequest(method: string, url: string, data?: any) {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(authToken && { 'Authorization': `Bearer ${authToken}` })
+      ...(authToken && { 'Authorization': `Bearer ${authToken}` }),
+      ...headers
     },
   };
 
@@ -39,3 +40,16 @@ export async function apiRequest(method: string, url: string, data?: any) {
 
   return response;
 }
+
+export const getContractAddresses = () => ({
+  userRegistry: import.meta.env.VITE_USER_REGISTRY_ADDRESS as string,
+  freelancePlatform: import.meta.env.VITE_FREELANCE_PLATFORM_ADDRESS as string,
+});
+
+export const getEthersProvider = async () => {
+  if (typeof window === 'undefined' || !(window as any).ethereum) throw new Error('No injected provider');
+  const { ethers } = await import('ethers');
+  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const signer = await provider.getSigner();
+  return { provider, signer };
+};

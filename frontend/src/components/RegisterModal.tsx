@@ -8,9 +8,12 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useAuthStore } from '@/store/authStore';
-import { useWalletStore } from '@/store/walletStore';
-import { apiRequest } from '@/lib/utils';
+import { useAuthStore } from '@store/authStore';
+import { useWalletStore } from '@store/walletStore';
+import { apiRequest, getContractAddresses, getEthersProvider } from '@/lib/utils';
+import { useIPFS } from '@/hooks/useIPFS';
+import { ethers } from 'ethers';
+import userRegistryAbi from '../../../backend/abis/UserRegistry.json';
 
 interface RegisterModalProps {
   open: boolean;
@@ -32,9 +35,13 @@ export function RegisterModal({ open, onOpenChange }: RegisterModalProps) {
     skills: ''
   });
 
+  const { uploadJSONToIPFS } = useIPFS();
+
   const registerMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest('POST', '/api/auth/register', data);
+      const response = await apiRequest('POST', `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/users/register`, data, {
+        'x-wallet-address': wallet?.address
+      });
       return response.json();
     },
     onSuccess: (data) => {
@@ -65,7 +72,7 @@ export function RegisterModal({ open, onOpenChange }: RegisterModalProps) {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!wallet?.address) {
@@ -100,17 +107,48 @@ export function RegisterModal({ open, onOpenChange }: RegisterModalProps) {
       .map(skill => skill.trim())
       .filter(skill => skill.length > 0);
 
-    registerMutation.mutate({
-      address: wallet.address,
-      username: formData.username,
-      email: formData.email,
-      password: formData.password,
-      role: formData.role,
-      profile: {
+    try {
+      // 1) Upload metadata to IPFS (optional - can use placeholder)
+      let metadataCid = `QmUserMetadata${Date.now()}`; // placeholder
+      try {
+        const metadata = {
+          username: formData.username,
+          email: formData.email,
+          role: formData.role,
+          profile: { bio: formData.bio, skills: skillsArray }
+        };
+        const ipfs = await uploadJSONToIPFS(metadata);
+        if (ipfs) metadataCid = ipfs.hash;
+      } catch (e) {
+        console.warn('IPFS upload failed, using placeholder:', e);
+      }
+
+      // 2) Call selfRegister from wallet
+      const { signer } = await getEthersProvider();
+      const { userRegistry } = getContractAddresses();
+      const contract = new ethers.Contract(userRegistry, (userRegistryAbi as any).abi || userRegistryAbi, signer);
+      const roleCapitalized = formData.role.charAt(0).toUpperCase() + formData.role.slice(1).toLowerCase();
+      
+      const tx = await contract.selfRegister(roleCapitalized, metadataCid);
+      const receipt = await tx.wait();
+
+      // 3) Backend verification call
+      registerMutation.mutate({
+        txHash: tx.hash,
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
         bio: formData.bio,
         skills: skillsArray
-      }
-    });
+      });
+    } catch (error: any) {
+      toast({
+        title: "Registration Failed",
+        description: error.message || "Failed to register on blockchain",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
