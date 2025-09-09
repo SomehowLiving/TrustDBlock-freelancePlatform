@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CommunicationData } from '@/types';
-import { useAuthStore } from '@/store/authStore';
+import { useAuthStore } from '@store/authStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { Send, Paperclip, MoreVertical } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';

@@ -3,12 +3,12 @@ import { Routes, Route } from 'react-router-dom';
 import { LandingPage } from '../pages/LandingPage';
 import { ConnectWallet } from '../pages/ConnectWallet';
 import { Register } from '../pages/Register';
-import { Dashboard } from '../pages/Dashboard';
-import { Projects } from '../pages/Projects';
-import { ProjectDetails } from '../pages/ProjectDetails';
-import { CreateProject } from '../pages/CreateProject';
-import { Profile } from '../pages/Profile';
-import { Messages } from '../pages/Messages';
+import Dashboard from '@pages/Dashboard';
+import Projects  from '@pages/Projects';
+import ProjectDetails  from '@pages/ProjectDetails';
+import  CreateProject from '@pages/CreateProject';
+import Profile from '@pages/Profile';
+import  Messages  from '@pages/Messages';
 import { ProtectedRoute } from './ProtectedRoute';
 import { Layout } from '../layout/Layout';
 

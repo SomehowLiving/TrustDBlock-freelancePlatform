@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { ProjectCard } from '@/components/ProjectCard';
 import { useQuery } from '@tanstack/react-query';
-import { useAuthStore } from '@/store/authStore';
+import { useAuthStore } from '@store/authStore';
 import { Link } from 'wouter';
 import { Search, Filter, Plus, Briefcase } from 'lucide-react';
 

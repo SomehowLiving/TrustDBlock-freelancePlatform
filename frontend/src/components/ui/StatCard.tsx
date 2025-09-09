@@ -33,3 +33,30 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, tr
     </div>
   );
 };
+
+// StatCard component with glassmorphism styling
+// const StatCard = ({ title, value, icon: Icon, trend, color }) => {
+//   let iconColorClass = '';
+//   let trendColorClass = '';
+
+//   switch (color) {
+//     case 'blue':
+//       iconColorClass = 'text-sky-400';
+//       trendColorClass = 'text-sky-400';
+//       break;
+//     case 'green':
+//       iconColorClass = 'text-emerald-400';
+//       trendColorClass = 'text-emerald-400';
+//       break;
+//     case 'purple':
+//       iconColorClass = 'text-indigo-400';
+//       trendColorClass = 'text-indigo-400';
+//       break;
+//     case 'orange':
+//       iconColorClass = 'text-amber-400';
+//       trendColorClass = 'text-amber-400';
+//       break;
+//     default:
+//       iconColorClass = 'text-slate-400';
+//       trendColorClass = 'text-slate-400';
+//   }
